@@ -1,0 +1,13 @@
+---
+clone:
+  tags: true
+  path: github.com/casualjim/go-app
+
+build:
+  compile:
+    image: golang:1.7-alpine
+    pull: true
+    commands:
+      - go get -t ./...
+      - go test -race ./...
+
