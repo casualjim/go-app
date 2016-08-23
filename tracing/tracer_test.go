@@ -9,15 +9,6 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-type testHandler struct {
-	cnt int
-}
-
-func (t *testHandler) Log(r *logrus.Entry) error {
-	t.cnt++
-	return nil
-}
-
 func TestNewTracer(t *testing.T) {
 	assert := assert.New(t)
 	tracer := NewTracer("testModule", nil, nil).(*defaultTracing)
