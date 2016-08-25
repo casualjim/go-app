@@ -25,4 +25,4 @@ publish:
     server: https://coverage.vmware.run
     token: $$GITHUB_TOKEN
     must_increase: true
-    include: .+\\.out$
+    include: profile.cov
