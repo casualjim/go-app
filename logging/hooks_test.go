@@ -13,3 +13,12 @@ func TestLogging_RegisterHook(t *testing.T) {
 	RegisterHook("null", func(_ *viper.Viper) logrus.Hook { return nil })
 	assert.Contains(t, knownHooks, "null")
 }
+
+func TestLogging_ParseHook(t *testing.T) {
+	v := viper.New()
+	assert.Empty(t, v.GetString("not there"))
+}
+
+func TestLogging_ParseHooks(t *testing.T) {
+
+}

@@ -23,19 +23,23 @@ The configuration can be expressed in JSON, YAML, TOML or HCL.
 example: 
 
 ```yaml
-tracing:
-  log: true
 logging:
-  level: Debug
-  hooks:
-    - journald
-  context:
-    env: dev
-  child1:
-    level: Info
+  root:
+    level: Debug
     hooks:
-      - file
-    context:
-      env: dev  
-```
+      - name: journald
+    writer: stderr
+    child1:
+      level: Info
+      hooks:
+        - name: file
+          path: ./app.log
+        - name: syslog
+          network: udp
+          host: localhost:514
+          priority: info
+  alerts:
+    level: error
+    writer: stderr
+ ```
 

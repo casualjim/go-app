@@ -31,6 +31,10 @@ func mergeConfig(child, parent *viper.Viper) *viper.Viper {
 	child.SetDefault("level", parent.GetString("level"))
 	child.SetDefault("writer", parent.Get("writer"))
 
+	// hooks are "special" they get merged for real
+	// so if you define hooks then the hooks from the parent logger trickle down
+	child.SetDefault("hooks", parent.Get("hooks"))
+
 	return child
 }
 
@@ -47,8 +51,22 @@ func mergeFields(child, parent logrus.Fields) logrus.Fields {
 
 func newNamedLogger(name string, fields logrus.Fields, cfg *viper.Viper) Logger {
 	logger := logrus.New()
-	logger.Formatter = parseFormatter(cfg.GetString("format"), cfg)
 	logger.Level = parseLevel(cfg.GetString("level"))
+	logger.Formatter = parseFormatter(cfg.GetString("format"), cfg)
+
+	// writer config can be a string key or a full fledged config.
+	var wcfg *viper.Viper
+	if cfg.InConfig("writer") {
+		vv := cfg.Get("writer")
+		switch tpe := vv.(type) {
+		case string:
+			wcfg = viper.New()
+			wcfg.Set("name", tpe)
+		default:
+			wcfg = cfg.Sub("writer")
+		}
+	}
+	logger.Out = parseWriter(wcfg)
 
 	// logger.Hooks = cfg.Hooks
 
