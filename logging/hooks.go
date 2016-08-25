@@ -1,6 +1,7 @@
 package logging
 
 import (
+	"strings"
 	"sync"
 
 	"github.com/Sirupsen/logrus"
@@ -21,6 +22,8 @@ func init() { // using init avoids a race
 }
 
 // RegisterHook for use through configuration system
-func RegisterHook(name string, factory CreateHook) error {
-	return nil
+func RegisterHook(name string, factory CreateHook) {
+	hooksLock.Lock()
+	knownHooks[strings.ToLower(name)] = factory
+	hooksLock.Unlock()
 }
