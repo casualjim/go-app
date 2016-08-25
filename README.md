@@ -1,4 +1,4 @@
-# Go App [![Build Status](https://ci.vmware.run/api/badges/casualjim/go-app/status.svg)](https://ci.vmware.run/casualjim/go-app)
+# Go App [![Build Status](https://ci.vmware.run/api/badges/casualjim/go-app/status.svg)](https://ci.vmware.run/casualjim/go-app) [![Coverage](https://coverage.vmware.run/badges/casualjim/go-app/coverage.svg)](https://coverage.vmware.run/casualjim/go-app)
 
 A library to provide application level context, config reloading and log configuration.
 This is a companion to golangs context.
