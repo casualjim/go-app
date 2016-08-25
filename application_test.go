@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/Sirupsen/logrus"
+	"github.com/casualjim/go-app/logging"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -76,14 +77,14 @@ func TestApplication_SetModule(t *testing.T) {
 func TestApplication_Logger(t *testing.T) {
 	app := New("LoggerTest", "")
 	assert.NotNil(t, app.Logger())
-	assert.IsType(t, &logrus.Entry{}, app.Logger())
+	assert.Implements(t, (*logging.Logger)(nil), app.Logger())
 
-	child := app.NewLogger("appModule", map[string]interface{}{"extra": "data"})
-	if assert.NotNil(t, child) && assert.IsType(t, &logrus.Entry{}, child) {
-		e := child.(*logrus.Entry)
-		assert.Equal(t, "appModule", e.Data["name"])
-		assert.Equal(t, "data", e.Data["extra"])
-		assert.Equal(t, "LoggerTest", e.Data["app"])
+	child := app.NewLogger("appModule", logrus.Fields{"extra": "data"})
+	if assert.NotNil(t, child) && assert.Implements(t, (*logging.Logger)(nil), child) {
+		data := child.(logging.Logger).Fields()
+		assert.Equal(t, "appModule", data["module"])
+		assert.Equal(t, "data", data["extra"])
+		assert.Equal(t, "LoggerTest", data["app"])
 	}
 }
 

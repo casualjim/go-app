@@ -2,7 +2,6 @@ package tracing
 
 import (
 	"bytes"
-	"os"
 	"testing"
 
 	"github.com/Sirupsen/logrus"
@@ -14,16 +13,28 @@ func TestNewTracer(t *testing.T) {
 	tracer := NewTracer("testModule", nil, nil).(*defaultTracing)
 	if assert.NotNil(tracer) {
 		assert.NotNil(tracer.logger)
+		assert.NotNil(tracer.registry)
+	}
+
+	tr2 := NewTracer("", nil, nil).(*defaultTracing)
+	if assert.NotNil(tr2) {
+		assert.NotNil(tr2.logger)
+		assert.NotNil(tr2.registry)
+		assert.Equal(trace, tr2.logger.(*logrus.Entry).Data["name"])
 	}
 }
 
 func TestTracerLog(t *testing.T) {
+
 	assert := assert.New(t)
 
+	prevLevel := logrus.GetLevel()
+	prevOut := logrus.StandardLogger().Out
 	var buf countingWriter
 	logrus.SetOutput(&buf)
 	logrus.SetLevel(logrus.DebugLevel)
-	defer logrus.SetOutput(os.Stderr)
+	defer logrus.SetOutput(prevOut)
+	defer logrus.SetLevel(prevLevel)
 
 	tracer1 := NewTracer("testModule", nil, nil).(*defaultTracing)
 	if assert.NotNil(tracer1) {

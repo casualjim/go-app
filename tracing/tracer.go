@@ -5,7 +5,6 @@ import (
 	"time"
 
 	logrus "github.com/Sirupsen/logrus"
-	cjm "github.com/casualjim/middlewares"
 	metrics "github.com/rcrowley/go-metrics"
 )
 
@@ -58,7 +57,6 @@ func NewTracer(name string, logger logrus.FieldLogger, registry metrics.Registry
 
 type defaultTracing struct {
 	logger   logrus.FieldLogger
-	appInfo  *cjm.AppInfo
 	registry metrics.Registry
 }
 

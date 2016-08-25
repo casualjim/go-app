@@ -31,12 +31,11 @@ logging:
     - journald
   context:
     env: dev
-  children:
-    actionq:
-      level: Info
-      hooks:
-        - file
-      context:
-        env: dev  
+  child1:
+    level: Info
+    hooks:
+      - file
+    context:
+      env: dev  
 ```
 

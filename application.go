@@ -4,13 +4,17 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"sync"
 
 	"github.com/Sirupsen/logrus"
+	"github.com/casualjim/go-app/logging"
 	"github.com/casualjim/go-app/tracing"
 	cjm "github.com/casualjim/middlewares"
+	"github.com/fsnotify/fsnotify"
 	"github.com/kardianos/osext"
 	"github.com/spf13/viper"
 )
@@ -47,7 +51,7 @@ type Application interface {
 	Logger() logrus.FieldLogger
 
 	// NewLogger creates a new named logger for this application
-	NewLogger(string, map[string]interface{}) logrus.FieldLogger
+	NewLogger(string, logrus.Fields) logrus.FieldLogger
 
 	// Tracer returns the root
 	Tracer() tracing.Tracer
@@ -62,8 +66,35 @@ type Application interface {
 	Info() cjm.AppInfo
 }
 
-// New application with the specified name, at the specified basepath
-func New(name, basePath string) Application {
+func createViper(name string) *viper.Viper {
+	v := viper.New()
+	v.SetConfigName("config")
+
+	addViperRemoteConfig(v)
+
+	v.AddConfigPath(path.Join(os.Getenv("HOME"), ".config", strings.ToLower(name)))
+	v.AddConfigPath(path.Join("/etc", strings.ToLower(name)))
+	v.AddConfigPath("etc")
+	v.AddConfigPath(".")
+
+	v.SetEnvPrefix(name)
+
+	v.ReadInConfig()
+	v.AutomaticEnv()
+
+	addViperDefaults(v)
+	return v
+}
+
+func addViperRemoteConfig(v *viper.Viper) {
+
+}
+
+func addViperDefaults(v *viper.Viper) {
+
+}
+
+func ensureDefaults(name, basePath string) (string, string, string) {
 	// configure version defaults
 	version := "dev"
 	if Version != "" {
@@ -84,6 +115,13 @@ func New(name, basePath string) Application {
 		basePath = "/"
 	}
 
+	return name, version, basePath
+}
+
+// New application with the specified name, at the specified basepath
+func New(nme, basePth string) Application {
+	name, version, basePath := ensureDefaults(nme, basePth)
+
 	appInfo := cjm.AppInfo{
 		Name:     filepath.Base(name),
 		BasePath: basePath,
@@ -91,12 +129,24 @@ func New(name, basePath string) Application {
 		Pid:      os.Getpid(),
 	}
 
-	// TODO: read config
-	cfg := viper.GetViper()
+	cfg := createViper(name)
+	if cfg == nil {
+		cfg = viper.New()
+	}
 
-	rootLogger := logrus.WithFields(logrus.Fields{
-		"app":  name,
-		"name": "root",
+	lcfg := viper.New()
+	if cfg.InConfig("logging") {
+		lcfg = cfg.Sub("logging")
+	}
+	rootLogger := logging.New(logrus.Fields{
+		"app": name,
+	}, lcfg)
+
+	cfg.WatchConfig()
+	cfg.OnConfigChange(func(in fsnotify.Event) {
+		rootLogger.Reload()
+		// TODO: implement reconfiguring logger tree and tracer tree
+		logrus.Infoln("config file changed:", in.Name)
 	})
 
 	return &defaultApplication{
@@ -111,7 +161,7 @@ func New(name, basePath string) Application {
 
 type defaultApplication struct {
 	appInfo    cjm.AppInfo
-	rootLogger logrus.FieldLogger
+	rootLogger logging.Logger
 	rootTracer tracing.Tracer
 	config     *viper.Viper
 
@@ -155,12 +205,8 @@ func (d *defaultApplication) Logger() logrus.FieldLogger {
 	return d.rootLogger
 }
 
-func (d *defaultApplication) NewLogger(name string, ctx map[string]interface{}) logrus.FieldLogger {
-	if ctx == nil {
-		ctx = map[string]interface{}{}
-	}
-	ctx["name"] = name
-	return d.rootLogger.WithFields(logrus.Fields(ctx))
+func (d *defaultApplication) NewLogger(name string, ctx logrus.Fields) logrus.FieldLogger {
+	return d.rootLogger.New(name, ctx)
 }
 
 func (d *defaultApplication) Tracer() tracing.Tracer {
