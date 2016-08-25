@@ -19,10 +19,12 @@ build:
       - cat ./profile.out >> profile.cov
       - tail -n +2 ./logging/profile.out >> profile.cov
       - tail -n +2 ./tracing/profile.out >> profile.cov
+      - go tool cover -func profile.cov
+      - gocov convert profile.cov | gocov report
 
 publish:
   coverage:
     server: https://coverage.vmware.run
     token: $$GITHUB_TOKEN
     must_increase: true
-    include: profile.cov
+ 
