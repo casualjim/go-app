@@ -14,13 +14,6 @@ func addLoggingDefaults(cfg *viper.Viper) {
 	})
 }
 
-func parseFormatter(fmtr string) logrus.Formatter {
-	if strings.ToLower(fmtr) == "json" {
-		return new(logrus.JSONFormatter)
-	}
-	return new(logrus.TextFormatter)
-}
-
 func parseLevel(level string) logrus.Level {
 	lvl, err := logrus.ParseLevel(level)
 	if err != nil {
@@ -54,10 +47,9 @@ func mergeFields(child, parent logrus.Fields) logrus.Fields {
 
 func newNamedLogger(name string, fields logrus.Fields, cfg *viper.Viper) Logger {
 	logger := logrus.New()
-	logger.Formatter = parseFormatter(cfg.GetString("format"))
+	logger.Formatter = parseFormatter(cfg.GetString("format"), cfg)
 	logger.Level = parseLevel(cfg.GetString("level"))
 
-	fields["module"] = name
 	// logger.Hooks = cfg.Hooks
 
 	return &defaultLogger{

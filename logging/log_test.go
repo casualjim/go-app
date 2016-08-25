@@ -38,14 +38,6 @@ func TestLogging_ParseLevel(t *testing.T) {
 	assert.NotEmpty(t, buf.String())
 }
 
-func TestLogging_ParseFormatter(t *testing.T) {
-	assert.IsType(t, &logrus.JSONFormatter{}, parseFormatter("json"))
-	assert.IsType(t, &logrus.JSONFormatter{}, parseFormatter("Json"))
-	assert.IsType(t, &logrus.JSONFormatter{}, parseFormatter("JSON"))
-
-	assert.IsType(t, &logrus.TextFormatter{}, parseFormatter("anything"))
-}
-
 func TestLogging_AddDefaults(t *testing.T) {
 	c := viper.New()
 	addLoggingDefaults(c)
@@ -77,7 +69,7 @@ func TestLogging_CreateNamedLogger(t *testing.T) {
 
 	l := newNamedLogger("the-name", logrus.Fields{"some": "field"}, c).(*defaultLogger)
 	assert.Equal(t, c, l.Config())
-	assert.Equal(t, logrus.Fields{"module": "the-name", "some": "field"}, l.Fields())
+	assert.Equal(t, logrus.Fields{"some": "field"}, l.Fields())
 	assert.Equal(t, logrus.InfoLevel, l.Entry.Logger.Level)
 	assert.IsType(t, &logrus.TextFormatter{}, l.Entry.Logger.Formatter)
 }

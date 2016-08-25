@@ -19,3 +19,8 @@ func init() { // using init avoids a race
 	hooksLock = new(sync.Mutex)
 	knownHooks = make(map[string]CreateHook, 50)
 }
+
+// RegisterHook for use through configuration system
+func RegisterHook(name string, factory CreateHook) error {
+	return nil
+}

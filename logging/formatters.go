@@ -1,6 +1,7 @@
 package logging
 
 import (
+	"strings"
 	"sync"
 
 	"github.com/Sirupsen/logrus"
@@ -11,11 +12,43 @@ import (
 type CreateFormatter func(*viper.Viper) logrus.Formatter
 
 var (
-	knownFormatters map[string]logrus.Formatter
+	knownFormatters map[string]CreateFormatter
 	formattersLock  *sync.Mutex
+
+	// DefaultFormatter the fallback formatter when no registered one matches
+	DefaultFormatter CreateFormatter
 )
 
 func init() {
 	formattersLock = new(sync.Mutex)
-	knownFormatters = make(map[string]logrus.Formatter, 10)
+
+	DefaultFormatter = func(c *viper.Viper) logrus.Formatter {
+		return &logrus.TextFormatter{}
+	}
+
+	knownFormatters = make(map[string]CreateFormatter, 10)
+	knownFormatters["json"] = func(c *viper.Viper) logrus.Formatter {
+		return &logrus.JSONFormatter{}
+	}
+	knownFormatters["text"] = func(c *viper.Viper) logrus.Formatter {
+		return &logrus.TextFormatter{}
+	}
+}
+
+func parseFormatter(fmtr string, v *viper.Viper) logrus.Formatter {
+	formattersLock.Lock()
+	if create, ok := knownFormatters[strings.ToLower(fmtr)]; ok {
+		formattersLock.Unlock()
+		return create(v)
+	}
+	formattersLock.Unlock()
+	logrus.Debugf("unknown formatter %q, falling back to default", fmtr)
+	return DefaultFormatter(v)
+}
+
+// RegisterFormatter registers a formatter for use in config files
+func RegisterFormatter(name string, factory CreateFormatter) {
+	formattersLock.Lock()
+	knownFormatters[strings.ToLower(name)] = factory
+	formattersLock.Unlock()
 }
