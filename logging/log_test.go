@@ -52,6 +52,7 @@ func TestLogging_MergeConfig(t *testing.T) {
 	c.Set("level", "debug")
 	c.Set("format", "json")
 	c.Set("writer", map[interface{}]interface{}{"stdout": nil})
+	c.Set("hooks", map[interface{}]interface{}{"name": "other", "host": "blah", "port": 3939, "replace": true})
 
 	cc := viper.New()
 
@@ -76,6 +77,8 @@ func TestLogging_CreateNamedLogger(t *testing.T) {
 
 func TestLogging_New(t *testing.T) {
 	c := viper.New()
+	c.Set("hooks", map[interface{}]interface{}{"name": "other", "host": "blah", "port": 3939, "replace": true})
+
 	l := New(logrus.Fields{"some": "field"}, c).(*defaultLogger)
 
 	assert.Equal(t, c, l.Config())

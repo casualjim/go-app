@@ -56,7 +56,7 @@ func newNamedLogger(name string, fields logrus.Fields, cfg *viper.Viper) Logger 
 
 	// writer config can be a string key or a full fledged config.
 	var wcfg *viper.Viper
-	if cfg.InConfig("writer") {
+	if cfg.IsSet("writer") {
 		vv := cfg.Get("writer")
 		switch tpe := vv.(type) {
 		case string:
@@ -68,7 +68,9 @@ func newNamedLogger(name string, fields logrus.Fields, cfg *viper.Viper) Logger 
 	}
 	logger.Out = parseWriter(wcfg)
 
-	// logger.Hooks = cfg.Hooks
+	for _, hook := range parseHooks(cfg) {
+		logger.Hooks.Add(hook)
+	}
 
 	return &defaultLogger{
 		Entry: logrus.Entry{
@@ -79,7 +81,8 @@ func newNamedLogger(name string, fields logrus.Fields, cfg *viper.Viper) Logger 
 	}
 }
 
-// Logger is the interface that application use to log against
+// Logger is the interface that application use to log against.
+// Ideally you use the logrus.FieldLogger or logrus.StdLogger interfaces in your own code.
 type Logger interface {
 	logrus.FieldLogger
 

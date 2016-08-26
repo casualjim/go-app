@@ -89,7 +89,7 @@ func init() {
 
 		slg, err := lrs.NewSyslogHook(nw, raddr, mapSev(sev)|mapFac(fac), tag)
 		if err != nil {
-			panic(err)
+			logrus.Fatalln(err)
 		}
 		return slg
 	})

@@ -15,6 +15,9 @@ const (
 
 // Tracer interface that represents a tracer in golang
 type Tracer interface {
+	// Trace the enter/leave of the method.
+	// Record time spent in the method.
+	// Returns a closure to close the method, best used in conjunction with defer, eg.: defer tr.Trace()()
 	Trace(name ...string) func()
 }
 
@@ -22,21 +25,7 @@ type Tracer interface {
 // When the config is nil the tracer will use default values for the config,
 // this is equivalent to
 //
-//      name: global
-//
-// Usage of the tracer:
-//
-//      var tracer = NewTracer(&Config{Name:"restapi"})
-//
-//      func TraceThis() {
-//          defer tracer.Trace()()
-//          /* do a work */
-//      }
-//
-//      func FunctionWithUglyName() {
-//          defer tracer.Trace("PrettyName")()
-//      }
-//
+//      name: trace
 func NewTracer(name string, logger logrus.FieldLogger, registry metrics.Registry) Tracer {
 	nm := name
 	if nm == "" {
