@@ -86,7 +86,7 @@ func newNamedLogger(name string, fields logrus.Fields, cfg *viper.Viper) Logger 
 type Logger interface {
 	logrus.FieldLogger
 
-	Reload() error
+	Reload(*viper.Viper) error
 	Config() *viper.Viper
 
 	New(string, logrus.Fields) Logger
@@ -101,9 +101,10 @@ type defaultLogger struct {
 }
 
 // New logger for the given config, if config is nil the default config will be used
-func New(fields logrus.Fields, v *viper.Viper) Logger {
-	const name = "root"
-
+func New(name string, fields logrus.Fields, v *viper.Viper) Logger {
+	if name == "" {
+		name = "root"
+	}
 	addLoggingDefaults(v)
 
 	if fields == nil {
@@ -135,7 +136,7 @@ func (d *defaultLogger) New(name string, fields logrus.Fields) Logger {
 	}
 }
 
-func (d *defaultLogger) Reload() error {
+func (d *defaultLogger) Reload(v *viper.Viper) error {
 	return nil
 }
 

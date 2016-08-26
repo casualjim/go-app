@@ -37,11 +37,12 @@ func init() {
 
 func parseFormatter(fmtr string, v *viper.Viper) logrus.Formatter {
 	formattersLock.Lock()
+	defer formattersLock.Unlock()
+
 	if create, ok := knownFormatters[strings.ToLower(fmtr)]; ok {
-		formattersLock.Unlock()
 		return create(v)
 	}
-	formattersLock.Unlock()
+
 	logrus.Debugf("unknown formatter %q, falling back to default", fmtr)
 	return DefaultFormatter(v)
 }

@@ -26,8 +26,9 @@ func init() { // using init avoids a race
 // RegisterHook for use through configuration system
 func RegisterHook(name string, factory CreateHook) {
 	hooksLock.Lock()
+	defer hooksLock.Unlock()
 	knownHooks[strings.ToLower(name)] = factory
-	hooksLock.Unlock()
+
 }
 
 // KnownHooks returns the list of keys for the registered hooks
@@ -78,14 +79,14 @@ func parseHook(v map[string]interface{}) logrus.Hook {
 		}
 
 		hooksLock.Lock()
+		defer hooksLock.Unlock()
 		if create, ok := knownHooks[strings.ToLower(name)]; ok {
 			vv := viper.New()
 			vv.Set("nested", v)
 			h := create(vv.Sub("nested"))
-			hooksLock.Unlock()
+
 			return h
 		}
-		hooksLock.Unlock()
 	}
 	return nil
 }

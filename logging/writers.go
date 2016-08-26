@@ -67,10 +67,10 @@ func parseWriter(cfg *viper.Viper) io.Writer {
 
 	name := strings.ToLower(cfg.GetString("name"))
 	writersLock.Lock()
+	defer writersLock.Unlock()
+
 	if create, ok := knownWriters[name]; ok {
-		writersLock.Unlock()
 		return create(cfg)
 	}
-	writersLock.Unlock()
 	return DefaultWriter
 }
