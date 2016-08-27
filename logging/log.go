@@ -65,6 +65,7 @@ func configureLogger(logger *logrus.Logger, fields logrus.Fields, cfg *viper.Vip
 	}
 	logger.Out = parseWriter(wcfg)
 
+	logger.Hooks = make(logrus.LevelHooks, len(logrus.AllLevels))
 	for _, hook := range parseHooks(cfg) {
 		logger.Hooks.Add(hook)
 	}
@@ -86,8 +87,7 @@ func newNamedLogger(name string, fields logrus.Fields, cfg *viper.Viper, parent 
 			Data:   fields,
 		},
 		config: cfg,
-		path:   append(bpth, name),
-		name:   name,
+		path:   append(bpth, strings.ToLower(name)),
 	}
 }
 
@@ -96,16 +96,15 @@ func newNamedLogger(name string, fields logrus.Fields, cfg *viper.Viper, parent 
 type Logger interface {
 	logrus.FieldLogger
 	New(string, logrus.Fields) Logger
+	Configure(v *viper.Viper)
 }
 
 type defaultLogger struct {
 	logrus.Entry
 
-	config   *viper.Viper
-	path     []string
-	name     string
-	children []*defaultLogger
-	reg      *LoggerRegistry
+	config *viper.Viper
+	path   []string
+	reg    *LoggerRegistry
 }
 
 func (d *defaultLogger) New(name string, fields logrus.Fields) Logger {
@@ -122,6 +121,7 @@ func (d *defaultLogger) New(name string, fields logrus.Fields) Logger {
 		// new config, so make a new logger
 		cfg := mergeConfig(d.config.Sub(nme), d.config)
 		l := newNamedLogger(name, data, cfg, d)
+		l.reg = d.reg
 		d.reg.Register(pth, l)
 		return l
 	}
@@ -134,8 +134,13 @@ func (d *defaultLogger) New(name string, fields logrus.Fields) Logger {
 		},
 		config: d.config,
 		path:   append(d.path, nme),
-		name:   name,
 	}
+	l.reg = d.reg
 	d.reg.Register(pth, l)
 	return l
+}
+
+func (d *defaultLogger) Configure(cfg *viper.Viper) {
+	configureLogger(d.Logger, d.Data, cfg)
+	d.config = cfg
 }

@@ -34,3 +34,11 @@ func TestLogging_RegisterFormatter(t *testing.T) {
 	})
 	assert.Contains(t, knownFormatters, "null")
 }
+
+func TestLogging_KnownFormatters(t *testing.T) {
+	vmts := KnownFormatters()
+	assert.Len(t, vmts, 3)
+	assert.Equal(t, "json", vmts[0])
+	assert.Equal(t, "null", vmts[1])
+	assert.Equal(t, "text", vmts[2])
+}

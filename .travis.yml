@@ -4,6 +4,8 @@ go:
   - 1.6.3
 
 before_install:
+  - apt-get install rsyslog
+  - rsyslogd
   - go get -u github.com/axw/gocov/gocov
   - go get -u gopkg.in/matm/v1/gocov-html
   - go get -u github.com/cee-dub/go-junit-report

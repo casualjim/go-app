@@ -30,6 +30,35 @@ alerts:
   name: PagerDuty
   format: json
 `)
+
+	rc4 = []byte(`---
+root:
+  level: debug
+  format: json
+  child1:
+    level: warn
+    format: text
+    child1child:
+      level: error
+      format: json
+alerts:
+  format: json
+`)
+
+	rc5 = []byte(`---
+root:
+  level: warn
+  format: text
+  child1:
+    level: error
+    format: json
+    child1child:
+      level: info
+      format: text
+alerts:
+  level: error
+  format: text
+`)
 )
 
 func TestLogging_NewRegistry(t *testing.T) {
@@ -132,4 +161,86 @@ func TestLogging_Defaults(t *testing.T) {
 	r1 := NewRegistry(v1)
 	assert.Len(t, r1.store, 1)
 	assert.IsType(t, &defaultLogger{}, r1.Root())
+}
+
+func TestLogging_Reload(t *testing.T) {
+	assert := assert.New(t)
+	v1 := viper.New()
+	v1.SetConfigType("yaml")
+	if assert.NoError(v1.ReadConfig(bytes.NewBuffer(rc4))) {
+		// create registry
+		reg := NewRegistry(v1)
+		root := reg.Root().(*defaultLogger)
+		alerts := reg.Get("alerts").(*defaultLogger)
+		// create nested child loggers
+		child1 := root.New("child1", logrus.Fields{"mode": "dev"}).(*defaultLogger)
+		child2 := root.New("child2", logrus.Fields{"mode": "dev"}).(*defaultLogger)
+		child1child := child1.New("child1child", logrus.Fields{"some": "field"}).(*defaultLogger)
+		child2child := child2.New("child2child", logrus.Fields{"other": "field"}).(*defaultLogger)
+		// verify configuration
+		assert.Equal(logrus.DebugLevel, root.Logger.Level)
+		assert.IsType(&logrus.JSONFormatter{}, root.Logger.Formatter)
+		assert.Equal(logrus.InfoLevel, alerts.Logger.Level)
+		assert.IsType(&logrus.JSONFormatter{}, alerts.Logger.Formatter)
+		assert.Equal(root.Logger, child2.Logger)
+		assert.Equal(root.Logger, child2child.Logger)
+		assert.Equal(logrus.WarnLevel, child1.Logger.Level)
+		assert.IsType(&logrus.TextFormatter{}, child1.Logger.Formatter)
+		assert.Equal(logrus.ErrorLevel, child1child.Logger.Level)
+		assert.IsType(&logrus.JSONFormatter{}, child1child.Logger.Formatter)
+
+		// upate the config for all loggers
+		if assert.NoError(v1.ReadConfig(bytes.NewBuffer(rc5))) {
+			// call reload
+			reg.Reload()
+			// verify new configuration
+			assert.Equal(logrus.WarnLevel, root.Logger.Level)
+			assert.IsType(&logrus.TextFormatter{}, root.Logger.Formatter)
+			assert.Equal(logrus.ErrorLevel, alerts.Logger.Level)
+			assert.IsType(&logrus.TextFormatter{}, alerts.Logger.Formatter)
+			assert.Equal(root.Logger, child2.Logger)
+			assert.Equal(root.Logger, child2child.Logger)
+			assert.Equal(logrus.ErrorLevel, child1.Logger.Level)
+			assert.IsType(&logrus.JSONFormatter{}, child1.Logger.Formatter)
+			assert.Equal(logrus.InfoLevel, child1child.Logger.Level)
+			assert.IsType(&logrus.TextFormatter{}, child1child.Logger.Formatter)
+		}
+	}
+}
+
+func TestLogging_LongestMatchingPath(t *testing.T) {
+	cs := `---
+root:
+  value: rootLogger
+  child1:
+    value: childLogger
+    child1child:
+      value: child1childLogger
+alerts:
+  value: alertsLogger
+`
+	v1 := viper.New()
+	v1.SetConfigType("yaml")
+	v1.ReadConfig(bytes.NewBufferString(cs))
+
+	expected := []struct {
+		Value string
+		Path  string
+	}{
+		{"rootLogger", "root"},
+		{"alertsLogger", "alerts"},
+		{"childLogger", "root.child1"},
+		{"child1childLogger", "root.child1.child1child"},
+		{"rootLogger", "root.child2"},
+		{"rootLogger", "root.child2.child2child"},
+	}
+
+	for _, v := range expected {
+		f := findLongestMatchingPath(v.Path, v1)
+		if assert.NotNil(t, f, "%q can't be nil", v.Path) {
+			assert.Equal(t, v.Value, f.GetString("value"))
+		}
+	}
+
+	assert.Nil(t, findLongestMatchingPath("not-there", v1))
 }

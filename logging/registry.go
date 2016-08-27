@@ -1,6 +1,7 @@
 package logging
 
 import (
+	"sort"
 	"strings"
 	"sync"
 
@@ -8,15 +9,11 @@ import (
 	"github.com/spf13/viper"
 )
 
-// DefaultRegistry for loggers
-var DefaultRegistry *LoggerRegistry
-
 // RootName of the root logger, defaults to root
 var RootName string
 
 func init() {
 	RootName = "root"
-	DefaultRegistry = NewRegistry(viper.GetViper())
 }
 
 // LoggerRegistry represents a registry for known loggers
@@ -98,9 +95,43 @@ func (r *LoggerRegistry) Root() Logger {
 }
 
 // Reload all the loggers with the new config
-func (r *LoggerRegistry) Reload(cfg *viper.Viper) error {
-	prev := r.config
-	_ = prev
-	r.config = cfg
+func (r *LoggerRegistry) Reload() {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+
+	// Get all keys, sorted by name and shortest to longest
+	var keys []string
+	for key := range r.store {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	// find matching config
+	// for each key find the longest possible path that has a config
+	// if no more path found or parts are exhausted use last config and stop searching
+	configs := make(map[string]*viper.Viper, len(keys))
+	for _, key := range keys {
+		configs[key] = findLongestMatchingPath(key, r.config)
+	}
+
+	// call reconfigure on logger
+	for _, k := range keys {
+		logger := r.store[k]
+		if cfg, ok := configs[k]; ok {
+			logger.Configure(cfg)
+		}
+	}
+}
+
+func findLongestMatchingPath(path string, cfg *viper.Viper) *viper.Viper {
+	parts := strings.Split(path, ".")
+	pl := len(parts)
+	for i := range parts {
+		mod := pl - i
+		k := strings.Join(parts[:mod], ".")
+		if cfg.IsSet(k) {
+			return cfg.Sub(k)
+		}
+	}
 	return nil
 }

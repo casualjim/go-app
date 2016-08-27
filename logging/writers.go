@@ -43,11 +43,15 @@ func init() {
 
 // KnownWriters returns the list of keys for the registered writers
 func KnownWriters() []string {
+	writersLock.Lock()
+
 	var writers []string
 	for k := range knownWriters {
 		writers = append(writers, k)
 	}
 	sort.Strings(writers)
+
+	writersLock.Unlock()
 	return writers
 }
 

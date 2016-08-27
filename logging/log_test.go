@@ -188,3 +188,44 @@ root:
 		assert.Len(t, reg.store, 2)
 	}
 }
+
+func TestLogging_LoggerConfigure(t *testing.T) {
+	c := viper.New()
+	c.Set("level", "debug")
+	c.Set("format", "json")
+	c.Set("writer", "stdout")
+	c.Set("hooks", map[interface{}]interface{}{"name": "other", "host": "blah", "port": 3939, "replace": true})
+
+	l := newNamedLogger("alerts", logrus.Fields{"mode": "dev"}, c, nil)
+	assert.Equal(t, c, l.config)
+	assert.Equal(t, logrus.Fields{"mode": "dev"}, l.Entry.Data)
+	assert.Equal(t, logrus.DebugLevel, l.Entry.Logger.Level)
+	assert.Equal(t, os.Stdout, l.Entry.Logger.Out)
+	assert.IsType(t, &logrus.JSONFormatter{}, l.Entry.Logger.Formatter)
+	assert.NotEmpty(t, l.Logger.Hooks)
+	h := l.Logger.Hooks[logrus.InfoLevel]
+	assert.Len(t, h, 1)
+	assert.IsType(t, &otherHook{}, h[0])
+	hh := h[0].(*otherHook)
+	assert.Equal(t, "blah", hh.Host)
+	assert.Equal(t, 3939, hh.Port)
+
+	c = viper.New()
+	c.Set("level", "warn")
+	c.Set("format", "text")
+	c.Set("writer", "stderr")
+	c.Set("hooks", map[interface{}]interface{}{"name": "other", "host": "example", "port": 4444, "replace": true})
+	l.Configure(c)
+	assert.Equal(t, c, l.config)
+	assert.Equal(t, logrus.Fields{"mode": "dev"}, l.Entry.Data)
+	assert.Equal(t, logrus.WarnLevel, l.Entry.Logger.Level)
+	assert.Equal(t, os.Stderr, l.Entry.Logger.Out)
+	assert.IsType(t, &logrus.TextFormatter{}, l.Entry.Logger.Formatter)
+	assert.NotEmpty(t, l.Logger.Hooks)
+	h = l.Logger.Hooks[logrus.InfoLevel]
+	assert.Len(t, h, 1)
+	assert.IsType(t, &otherHook{}, h[0])
+	hh = h[0].(*otherHook)
+	assert.Equal(t, "example", hh.Host)
+	assert.Equal(t, 4444, hh.Port)
+}

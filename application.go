@@ -136,7 +136,7 @@ func New(nme, basePth string) Application {
 
 	cfg.WatchConfig()
 	cfg.OnConfigChange(func(in fsnotify.Event) {
-		allLoggers.Reload(cfg)
+		allLoggers.Reload()
 		// TODO: implement reconfiguring logger tree and tracer tree
 		logrus.Infoln("config file changed:", in.Name)
 	})

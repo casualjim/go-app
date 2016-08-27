@@ -1,6 +1,7 @@
 package logging
 
 import (
+	"sort"
 	"strings"
 	"sync"
 
@@ -52,4 +53,18 @@ func RegisterFormatter(name string, factory CreateFormatter) {
 	formattersLock.Lock()
 	knownFormatters[strings.ToLower(name)] = factory
 	formattersLock.Unlock()
+}
+
+// KnownFormatters returns a list of keys for the currently registered formatters
+func KnownFormatters() []string {
+	formattersLock.Lock()
+
+	var formatters []string
+	for k := range knownFormatters {
+		formatters = append(formatters, k)
+	}
+	sort.Strings(formatters)
+
+	formattersLock.Unlock()
+	return formatters
 }
