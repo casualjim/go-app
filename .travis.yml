@@ -1,0 +1,22 @@
+language: go
+go:
+  - 1.7
+  - 1.6.3
+
+before_install:
+  - go get -u github.com/axw/gocov/gocov
+  - go get -u gopkg.in/matm/v1/gocov-html
+  - go get -u github.com/cee-dub/go-junit-report
+  - go get github.com/mattn/goveralls
+
+script:
+  - go get -t ./...
+  - go test -race ./...
+  - go test -cover -covermode=atomic -coverprofile=profile.out .
+  - go test -cover -covermode=atomic -coverprofile=logging/profile.out ./logging
+  - go test -cover -covermode=atomic -coverprofile=tracing/profile.out ./tracing
+  - cat ./profile.out >> profile.cov
+  - tail -n +2 ./logging/profile.out >> profile.cov
+  - tail -n +2 ./tracing/profile.out >> profile.cov
+  - go tool cover -func profile.cov
+  - gocov convert profile.cov | gocov report
