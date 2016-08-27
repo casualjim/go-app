@@ -14,7 +14,7 @@ func TestSyslogHook(t *testing.T) {
 		v.Set("hooks", map[interface{}]interface{}{
 			"name": "syslog",
 		})
-		logging.New(nil, v)
+		logging.NewRegistry(v)
 	}
 }
 
@@ -26,7 +26,7 @@ func TestSyslogHookPanics(t *testing.T) {
 			"name":     "syslog",
 			"facility": "invalid",
 		})
-		assert.Panics(t, func() { logging.New(nil, v) })
+		assert.Panics(t, func() { logging.NewRegistry(v) })
 	}
 }
 
@@ -37,6 +37,6 @@ func TestSyslogHookWithPrio(t *testing.T) {
 			"name":     "syslog",
 			"severity": "error",
 		})
-		logging.New(nil, v)
+		logging.NewRegistry(v)
 	}
 }

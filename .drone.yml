@@ -7,6 +7,8 @@ build:
   compile:
     image: golang:1.7
     pull: true
+    volumes:
+      - /dev/log:/dev/log
     commands:
       - go get -u github.com/axw/gocov/gocov
       - go get -u gopkg.in/matm/v1/gocov-html
