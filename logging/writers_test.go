@@ -55,7 +55,7 @@ func TestLogging_ParseWriter(t *testing.T) {
 	// config is a string value
 	v := viper.New()
 	v.Set("writer", "stderr")
-	l := newNamedLogger("root", nil, v).(*defaultLogger)
+	l := newNamedLogger("root", nil, v, nil)
 	assert.Equal(t, l.Entry.Logger.Out, os.Stderr)
 
 	// fallback to default

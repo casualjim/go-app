@@ -68,6 +68,114 @@ func TestLogging_KnownHooks(t *testing.T) {
 	assert.Len(t, kw, len(knownHooks))
 }
 
+func TestLogging_MergeHooksConfig(t *testing.T) {
+	v := viper.New()
+	v.Set("hooks", []interface{}{
+		map[interface{}]interface{}{"name": "simple", "host": "blah"},
+		map[interface{}]interface{}{"name": "other", "host": "blah", "port": 3939, "replace": true},
+	})
+
+	vv := viper.New()
+	vv.Set("hooks", map[interface{}]interface{}{"name": "other", "host": "another-one", "port": 4444, "replace": true})
+
+	mergeHooks(vv, v)
+
+	hc := vv.Get("hooks").([]interface{})
+	assert.Len(t, hc, 2)
+	l1 := hc[0].(map[interface{}]interface{})
+	assert.Equal(t, "simple", l1["name"])
+	assert.Equal(t, "blah", l1["host"])
+
+	l2 := hc[1].(map[interface{}]interface{})
+	assert.Equal(t, "other", l2["name"])
+	assert.Equal(t, "another-one", l2["host"])
+	assert.Equal(t, 4444, l2["port"])
+	assert.Equal(t, true, l2["replace"])
+}
+
+func TestLogging_MergeHooksConfig_ChildList(t *testing.T) {
+	v := viper.New()
+	v.Set("hooks", []interface{}{
+		map[interface{}]interface{}{"name": "simple", "host": "blah"},
+		map[interface{}]interface{}{"name": "other", "host": "blah", "port": 3939, "replace": true},
+	})
+
+	vv := viper.New()
+	vv.Set("hooks", []interface{}{map[interface{}]interface{}{"name": "other", "host": "another-one", "port": 4444, "replace": true}})
+
+	mergeHooks(vv, v)
+
+	hc := vv.Get("hooks").([]interface{})
+	assert.Len(t, hc, 2)
+	l1 := hc[0].(map[interface{}]interface{})
+	assert.Equal(t, "simple", l1["name"])
+	assert.Equal(t, "blah", l1["host"])
+
+	l2 := hc[1].(map[interface{}]interface{})
+	assert.Equal(t, "other", l2["name"])
+	assert.Equal(t, "another-one", l2["host"])
+	assert.Equal(t, 4444, l2["port"])
+	assert.Equal(t, true, l2["replace"])
+}
+
+func TestLogging_MergeHooksConfig_ChildListNoOverlap(t *testing.T) {
+	v := viper.New()
+	v.Set("hooks", []interface{}{
+		map[interface{}]interface{}{"name": "simple", "host": "blah"},
+	})
+
+	vv := viper.New()
+	vv.Set("hooks", []interface{}{map[interface{}]interface{}{"name": "other", "host": "another-one", "port": 4444, "replace": true}})
+
+	mergeHooks(vv, v)
+
+	hc := vv.Get("hooks").([]interface{})
+	assert.Len(t, hc, 2)
+	l1 := hc[0].(map[interface{}]interface{})
+	assert.Equal(t, "simple", l1["name"])
+	assert.Equal(t, "blah", l1["host"])
+
+	l2 := hc[1].(map[interface{}]interface{})
+	assert.Equal(t, "other", l2["name"])
+	assert.Equal(t, "another-one", l2["host"])
+	assert.Equal(t, 4444, l2["port"])
+	assert.Equal(t, true, l2["replace"])
+}
+
+func TestLogging_MergeHooksConfig_ChildOnly(t *testing.T) {
+	v := viper.New()
+	v.Set("hooks", []interface{}{
+		map[interface{}]interface{}{"name": "simple", "host": "blah"},
+		map[interface{}]interface{}{"name": "other", "host": "blah", "port": 3939, "replace": true},
+	})
+
+	vv := viper.New()
+	vv.Set("hooks", map[interface{}]interface{}{"name": "other", "host": "another-one", "port": 4444, "replace": true})
+
+	mergeHooks(v, viper.New())
+	mergeHooks(vv, viper.New())
+
+	hc1 := v.Get("hooks").([]interface{})
+	assert.Len(t, hc1, 2)
+	l1 := hc1[0].(map[interface{}]interface{})
+	assert.Equal(t, "simple", l1["name"])
+	assert.Equal(t, "blah", l1["host"])
+
+	l2 := hc1[1].(map[interface{}]interface{})
+	assert.Equal(t, "other", l2["name"])
+	assert.Equal(t, "blah", l2["host"])
+	assert.Equal(t, 3939, l2["port"])
+	assert.Equal(t, true, l2["replace"])
+
+	hc2 := vv.Get("hooks").([]interface{})
+	assert.Len(t, hc2, 1)
+	l3 := hc2[0].(map[interface{}]interface{})
+	assert.Equal(t, "other", l3["name"])
+	assert.Equal(t, "another-one", l3["host"])
+	assert.Equal(t, 4444, l3["port"])
+	assert.Equal(t, true, l3["replace"])
+}
+
 func init() {
 	RegisterHook("simple", func(c *viper.Viper) logrus.Hook {
 		return &simpleHook{

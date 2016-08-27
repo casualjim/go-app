@@ -3,6 +3,8 @@
 A library to provide application level context, config reloading and log configuration.
 This is a companion to golangs context.
 
+This package is one of those tools you won't always need, but when you need it you'll know you need it.
+
 ## Depends on
 
 * logrus
@@ -21,6 +23,40 @@ This is a companion to golangs context.
 The configuration can be expressed in JSON, YAML, TOML or HCL.
 
 example: 
+
+```hcl
+logging {
+  root {
+    level = "debug"
+    hooks = [
+      { name = "journald" }
+    ]
+  
+    child1 {
+      level = "info"
+      hooks = [
+        { 
+          name = "file"
+          path = "./app.log"
+        },
+        {
+          name     = "syslog"
+          network  = "udp"
+          host     = "localhost:514"
+          priority = "info"
+        }
+      ]
+    }
+  }
+
+  alerts {
+    level  = "error"
+    writer = "stderr"
+  }
+}
+```
+
+or the more concise yaml:
 
 ```yaml
 logging:
@@ -42,4 +78,3 @@ logging:
     level: error
     writer: stderr
  ```
-

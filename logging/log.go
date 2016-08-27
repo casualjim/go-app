@@ -9,9 +9,7 @@ import (
 
 func addLoggingDefaults(cfg *viper.Viper) {
 	cfg.SetDefault("level", "info")
-	cfg.SetDefault("writer", map[interface{}]interface{}{
-		"stderr": nil,
-	})
+	cfg.SetDefault("writer", map[interface{}]interface{}{"stderr": nil})
 }
 
 func parseLevel(level string) logrus.Level {
@@ -33,7 +31,7 @@ func mergeConfig(child, parent *viper.Viper) *viper.Viper {
 
 	// hooks are "special" they get merged for real
 	// so if you define hooks then the hooks from the parent logger trickle down
-	child.SetDefault("hooks", parent.Get("hooks"))
+	mergeHooks(child, parent)
 
 	return child
 }
@@ -49,8 +47,7 @@ func mergeFields(child, parent logrus.Fields) logrus.Fields {
 	return data
 }
 
-func newNamedLogger(name string, fields logrus.Fields, cfg *viper.Viper) Logger {
-	logger := logrus.New()
+func configureLogger(logger *logrus.Logger, fields logrus.Fields, cfg *viper.Viper) {
 	logger.Level = parseLevel(cfg.GetString("level"))
 	logger.Formatter = parseFormatter(cfg.GetString("format"), cfg)
 
@@ -71,6 +68,17 @@ func newNamedLogger(name string, fields logrus.Fields, cfg *viper.Viper) Logger 
 	for _, hook := range parseHooks(cfg) {
 		logger.Hooks.Add(hook)
 	}
+}
+
+func newNamedLogger(name string, fields logrus.Fields, cfg *viper.Viper, parent *defaultLogger) *defaultLogger {
+	logger := logrus.New()
+
+	configureLogger(logger, fields, cfg)
+
+	var bpth []string
+	if parent != nil {
+		bpth = parent.path
+	}
 
 	return &defaultLogger{
 		Entry: logrus.Entry{
@@ -78,6 +86,8 @@ func newNamedLogger(name string, fields logrus.Fields, cfg *viper.Viper) Logger 
 			Data:   fields,
 		},
 		config: cfg,
+		path:   append(bpth, name),
+		name:   name,
 	}
 }
 
@@ -85,65 +95,47 @@ func newNamedLogger(name string, fields logrus.Fields, cfg *viper.Viper) Logger 
 // Ideally you use the logrus.FieldLogger or logrus.StdLogger interfaces in your own code.
 type Logger interface {
 	logrus.FieldLogger
-
-	Reload(*viper.Viper) error
-	Config() *viper.Viper
-
 	New(string, logrus.Fields) Logger
-	Fields() logrus.Fields
 }
 
 type defaultLogger struct {
 	logrus.Entry
 
-	config *viper.Viper
-	path   string
-}
-
-// New logger for the given config, if config is nil the default config will be used
-func New(name string, fields logrus.Fields, v *viper.Viper) Logger {
-	if name == "" {
-		name = "root"
-	}
-	addLoggingDefaults(v)
-
-	if fields == nil {
-		fields = make(logrus.Fields, 1)
-	}
-	fields["module"] = name
-
-	return newNamedLogger(name, fields, v)
+	config   *viper.Viper
+	path     []string
+	name     string
+	children []*defaultLogger
+	reg      *LoggerRegistry
 }
 
 func (d *defaultLogger) New(name string, fields logrus.Fields) Logger {
-	data := mergeFields(fields, d.Entry.Data)
 	nme := strings.ToLower(name)
+	pth := strings.Join(append(d.path, nme), ".")
+	if l, ok := d.reg.GetOK(pth); ok {
+		return l
+	}
+
+	data := mergeFields(fields, d.Entry.Data)
 	data["module"] = name
 
 	if d.config.InConfig(nme) {
 		// new config, so make a new logger
 		cfg := mergeConfig(d.config.Sub(nme), d.config)
-		return newNamedLogger(name, data, cfg)
+		l := newNamedLogger(name, data, cfg, d)
+		d.reg.Register(pth, l)
+		return l
 	}
 
 	// Share the logger with the parent, same config
-	return &defaultLogger{
+	l := &defaultLogger{
 		Entry: logrus.Entry{
 			Logger: d.Entry.Logger,
 			Data:   data,
 		},
 		config: d.config,
+		path:   append(d.path, nme),
+		name:   name,
 	}
-}
-
-func (d *defaultLogger) Reload(v *viper.Viper) error {
-	return nil
-}
-
-func (d *defaultLogger) Config() *viper.Viper {
-	return d.config
-}
-
-func (d *defaultLogger) Fields() logrus.Fields {
-	return d.Entry.Data
+	d.reg.Register(pth, l)
+	return l
 }

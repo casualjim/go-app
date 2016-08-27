@@ -2,6 +2,7 @@ package logging
 
 import (
 	"bytes"
+	"os"
 	"testing"
 
 	"github.com/Sirupsen/logrus"
@@ -51,7 +52,7 @@ func TestLogging_MergeConfig(t *testing.T) {
 	c := viper.New()
 	c.Set("level", "debug")
 	c.Set("format", "json")
-	c.Set("writer", map[interface{}]interface{}{"stdout": nil})
+	c.Set("writer", "stdout")
 	c.Set("hooks", map[interface{}]interface{}{"name": "other", "host": "blah", "port": 3939, "replace": true})
 
 	cc := viper.New()
@@ -61,90 +62,129 @@ func TestLogging_MergeConfig(t *testing.T) {
 	cc.Set("level", "warn")
 	assert.Equal(t, "warn", cc.GetString("level"))
 	assert.Equal(t, "json", cc.GetString("format"))
-	assert.Equal(t, map[interface{}]interface{}{"stdout": nil}, cc.Get("writer"))
+	assert.Equal(t, "stdout", cc.Get("writer"))
 }
 
 func TestLogging_CreateNamedLogger(t *testing.T) {
 	c := viper.New()
 	addLoggingDefaults(c)
 
-	l := newNamedLogger("the-name", logrus.Fields{"some": "field"}, c).(*defaultLogger)
-	assert.Equal(t, c, l.Config())
-	assert.Equal(t, logrus.Fields{"some": "field"}, l.Fields())
+	l := newNamedLogger("the-name", logrus.Fields{"some": "field"}, c, nil)
+	assert.Equal(t, c, l.config)
+	assert.Equal(t, logrus.Fields{"some": "field"}, l.Entry.Data)
 	assert.Equal(t, logrus.InfoLevel, l.Entry.Logger.Level)
 	assert.IsType(t, &logrus.TextFormatter{}, l.Entry.Logger.Formatter)
 }
 
-func TestLogging_New(t *testing.T) {
+func TestLogging_CreateNamedLoggerWithHooks(t *testing.T) {
 	c := viper.New()
+	c.Set("level", "debug")
+	c.Set("format", "json")
+	c.Set("writer", "stdout")
 	c.Set("hooks", map[interface{}]interface{}{"name": "other", "host": "blah", "port": 3939, "replace": true})
+	addLoggingDefaults(c)
 
-	l := New(logrus.Fields{"some": "field"}, c).(*defaultLogger)
-
-	assert.Equal(t, c, l.Config())
-	assert.Equal(t, logrus.Fields{"module": "root", "some": "field"}, l.Fields())
-	assert.Equal(t, logrus.InfoLevel, l.Entry.Logger.Level)
-	assert.IsType(t, &logrus.TextFormatter{}, l.Entry.Logger.Formatter)
-
-	l2 := New(nil, c).(*defaultLogger)
-	assert.Equal(t, c, l2.Config())
-	assert.Equal(t, logrus.Fields{"module": "root"}, l2.Fields())
-	assert.Equal(t, logrus.InfoLevel, l2.Entry.Logger.Level)
-	assert.IsType(t, &logrus.TextFormatter{}, l2.Entry.Logger.Formatter)
+	l := newNamedLogger("the-name", logrus.Fields{"some": "field"}, c, nil)
+	assert.Equal(t, c, l.config)
+	assert.Equal(t, logrus.Fields{"some": "field"}, l.Entry.Data)
+	assert.Equal(t, logrus.DebugLevel, l.Entry.Logger.Level)
+	assert.Equal(t, os.Stdout, l.Entry.Logger.Out)
+	assert.IsType(t, &logrus.JSONFormatter{}, l.Entry.Logger.Formatter)
+	assert.NotEmpty(t, l.Logger.Hooks)
 }
 
 func TestLogging_NewChildLogger(t *testing.T) {
 	cfgb := []byte(`---
-level: debug
-formatter: json
-someModule:
-  level: warn
-  writer:
-    stderr:
+root:
+  level: debug
+  formatter: json
+  somemodule:
+    level: warn
+    writer:
+      stderr:
 `)
 
 	c := viper.New()
 	c.SetConfigType("YAML")
 	if assert.NoError(t, c.ReadConfig(bytes.NewBuffer(cfgb))) {
+		reg := NewRegistry(c)
+		// _ = reg
+		lr := reg.Root()
+		rc := c.Sub(RootName)
+		addLoggingDefaults(rc)
 
-		l := New(logrus.Fields{"some": "field"}, c).(*defaultLogger)
-		assert.Equal(t, c, l.Config())
-		assert.Equal(t, logrus.Fields{"module": "root", "some": "field"}, l.Fields())
-		assert.Equal(t, logrus.DebugLevel, l.Entry.Logger.Level)
-		assert.IsType(t, &logrus.TextFormatter{}, l.Entry.Logger.Formatter)
+		if assert.NotNil(t, lr) {
+			l := lr.(*defaultLogger)
+			assert.Equal(t, rc, l.config)
+			assert.Equal(t, logrus.Fields{"module": "root"}, l.Entry.Data)
+			assert.Equal(t, logrus.DebugLevel, l.Entry.Logger.Level)
+			assert.IsType(t, &logrus.TextFormatter{}, l.Entry.Logger.Formatter)
+		}
 
-		cl := l.New("someModule", logrus.Fields{"other": "value"}).(*defaultLogger)
-		assert.Equal(t, mergeConfig(c.Sub("somemodule"), c), cl.Config())
-		assert.Equal(t, logrus.Fields{"module": "someModule", "some": "field", "other": "value"}, cl.Fields())
+		cl := lr.New("someModule", logrus.Fields{"other": "value"}).(*defaultLogger)
+		assert.Equal(t, mergeConfig(rc.Sub("someModule"), rc), cl.config)
+		assert.Equal(t, logrus.Fields{"module": "someModule", "other": "value"}, cl.Entry.Data)
 		assert.Equal(t, logrus.WarnLevel, cl.Entry.Logger.Level)
 		assert.IsType(t, &logrus.TextFormatter{}, cl.Entry.Logger.Formatter)
+
+		assert.Len(t, reg.store, 2)
 	}
 }
 
 func TestLogging_SharedChildLogger(t *testing.T) {
 	cfgb := []byte(`---
-level: debug
-formatter: json
-someModule:
-  level: warn
-  writer:
-    stderr:
+root:
+  level: debug
+  formatter: json
+  somemodule:
+    level: warn
+    writer:
+      stderr:
 `)
 
 	c := viper.New()
 	c.SetConfigType("YAML")
 	if assert.NoError(t, c.ReadConfig(bytes.NewBuffer(cfgb))) {
 
-		l := New(logrus.Fields{"some": "field"}, c).(*defaultLogger)
-		assert.Equal(t, c, l.Config())
-		assert.Equal(t, logrus.Fields{"module": "root", "some": "field"}, l.Fields())
+		reg := NewRegistry(c)
+		l := reg.Root().(*defaultLogger)
+		rc := c.Sub(RootName)
+		addLoggingDefaults(rc)
+		assert.Equal(t, rc, l.config)
+		assert.Equal(t, logrus.Fields{"module": "root"}, l.Entry.Data)
 		assert.Equal(t, logrus.DebugLevel, l.Entry.Logger.Level)
 		assert.IsType(t, &logrus.TextFormatter{}, l.Entry.Logger.Formatter)
 
 		cl := l.New("otherModule", logrus.Fields{"other": "value"}).(*defaultLogger)
-		assert.Equal(t, c, cl.Config())
-		assert.Equal(t, logrus.Fields{"module": "otherModule", "some": "field", "other": "value"}, cl.Fields())
+		assert.Equal(t, rc, cl.config)
+		assert.Equal(t, logrus.Fields{"module": "otherModule", "other": "value"}, cl.Entry.Data)
 		assert.Equal(t, logrus.DebugLevel, cl.Entry.Logger.Level)
 		assert.IsType(t, &logrus.TextFormatter{}, cl.Entry.Logger.Formatter)
+
+		assert.Len(t, reg.store, 2)
+	}
+}
+
+func TestLogging_ChildLoggerFromCache(t *testing.T) {
+	cfgb := []byte(`---
+root:
+  level: debug
+  formatter: json
+  somemodule:
+    level: warn
+    writer:
+      stderr:
+`)
+
+	c := viper.New()
+	c.SetConfigType("YAML")
+	if assert.NoError(t, c.ReadConfig(bytes.NewBuffer(cfgb))) {
+
+		reg := NewRegistry(c)
+		l := reg.Root()
+		cl := l.New("otherModule", logrus.Fields{"other": "value"})
+		cl2 := l.New("otherModule", logrus.Fields{"other": "value"})
+		assert.Equal(t, cl, cl2)
+		assert.Len(t, reg.store, 2)
 	}
 }

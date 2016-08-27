@@ -90,3 +90,81 @@ func parseHook(v map[string]interface{}) logrus.Hook {
 	}
 	return nil
 }
+
+// hooks are "special" they get merged for real
+// so if you define hooks then the hooks from the parent logger trickle down
+func mergeHooks(child, parent *viper.Viper) {
+	var result []interface{}
+	known := make(map[string]int, 20)
+
+	if parent.IsSet("hooks") {
+		switch hc := parent.Get("hooks").(type) {
+		case []interface{}:
+			for _, v := range hc {
+				if mp, ok := v.(map[interface{}]interface{}); ok {
+					if nmi, ok := mp["name"]; ok {
+						if nm, ok := nmi.(string); ok {
+							known[nm] = len(result)
+							result = append(result, v)
+						}
+					}
+				}
+			}
+		case map[interface{}]interface{}:
+			if nmi, ok := hc["name"]; ok {
+				if nm, ok := nmi.(string); ok {
+					known[nm] = len(result)
+					result = append(result, hc)
+				}
+			}
+		}
+	}
+
+	if child.IsSet("hooks") {
+		switch hc := child.Get("hooks").(type) {
+		case []interface{}:
+			if len(result) == 0 {
+				for _, v := range hc {
+					if mp, ok := v.(map[interface{}]interface{}); ok {
+						if nmi, ok := mp["name"]; ok {
+							if nm, ok := nmi.(string); ok {
+								known[nm] = len(result)
+								result = append(result, v)
+							}
+						}
+					}
+				}
+			} else {
+				for _, v := range hc {
+					if mp, ok := v.(map[interface{}]interface{}); ok {
+						if nmi, ok := mp["name"]; ok {
+							if nm, ok := nmi.(string); ok {
+								idx, k := known[nm]
+								if k {
+									result[idx] = v
+								} else {
+									known[nm] = len(result)
+									result = append(result, v)
+								}
+							}
+						}
+					}
+				}
+			}
+		case map[interface{}]interface{}:
+			if nmi, ok := hc["name"]; ok {
+				if nm, ok := nmi.(string); ok {
+					idx, k := known[nm]
+					if k {
+						result[idx] = hc
+					} else {
+						known[nm] = len(result)
+						result = append(result, hc)
+					}
+				}
+			}
+		}
+	}
+
+	child.Set("hooks", result)
+}

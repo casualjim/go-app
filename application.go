@@ -78,8 +78,10 @@ func createViper(name string) *viper.Viper {
 	v.AddConfigPath(".")
 
 	v.SetEnvPrefix(name)
-
 	v.ReadInConfig()
+	// if err := v.ReadInConfig(); err != nil {
+	// 	logrus.Fatalln(err)
+	// }
 	v.AutomaticEnv()
 
 	addViperDefaults(v)
@@ -130,29 +132,19 @@ func New(nme, basePth string) Application {
 	}
 
 	cfg := createViper(name)
-	if cfg == nil {
-		cfg = viper.New()
-	}
-
-	lcfg := viper.New()
-	if cfg.InConfig("logging") {
-		lcfg = cfg.Sub("logging")
-	}
-	rootLogger := logging.New(logrus.Fields{
-		"app": name,
-	}, lcfg)
+	allLoggers := logging.NewRegistry(cfg)
 
 	cfg.WatchConfig()
 	cfg.OnConfigChange(func(in fsnotify.Event) {
-		rootLogger.Reload()
+		allLoggers.Reload(cfg)
 		// TODO: implement reconfiguring logger tree and tracer tree
 		logrus.Infoln("config file changed:", in.Name)
 	})
 
 	return &defaultApplication{
 		appInfo:    appInfo,
-		rootLogger: rootLogger,
-		rootTracer: tracing.NewTracer("root", rootLogger.WithField("name", "tracer"), nil),
+		rootLogger: allLoggers.Root(),
+		rootTracer: tracing.NewTracer("root", allLoggers.Root().WithField("name", "tracer"), nil),
 		config:     cfg,
 		registry:   make(map[ModuleKey]reflect.Value, 100),
 		regLock:    new(sync.Mutex),
