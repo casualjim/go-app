@@ -9,11 +9,22 @@ import (
 	"github.com/spf13/viper"
 )
 
-// RootName of the root logger, defaults to root
-var RootName string
+var (
+	// RootName of the root logger, defaults to root
+	RootName string
+
+	logKeys map[string]struct{}
+)
 
 func init() {
 	RootName = "root"
+
+	logKeys = map[string]struct{}{
+		"level":  struct{}{},
+		"format": struct{}{},
+		"writer": struct{}{},
+		"hooks":  struct{}{},
+	}
 }
 
 // LoggerRegistry represents a registry for known loggers
@@ -25,12 +36,22 @@ type LoggerRegistry struct {
 
 // NewRegistry creates a new logger registry
 func NewRegistry(cfg *viper.Viper, context logrus.Fields) *LoggerRegistry {
+	if cfg == nil {
+		cfg = viper.New()
+	}
+
 	c := cfg
-	if c.InConfig("logging") {
+	if c.IsSet("logging") {
 		c = cfg.Sub("logging")
 	}
 
-	keys := c.AllKeys()
+	var keys []string
+	for _, kn := range c.AllKeys() {
+		if _, ok := logKeys[kn]; !ok {
+			keys = append(keys, kn)
+		}
+	}
+
 	store := make(map[string]Logger, len(keys))
 	reg := &LoggerRegistry{
 		store:  store,
@@ -39,6 +60,7 @@ func NewRegistry(cfg *viper.Viper, context logrus.Fields) *LoggerRegistry {
 	}
 
 	for _, k := range keys {
+
 		// no sharing of context, so copy
 		fields := make(logrus.Fields, len(context)+1)
 		for kk, vv := range context {
@@ -46,7 +68,7 @@ func NewRegistry(cfg *viper.Viper, context logrus.Fields) *LoggerRegistry {
 		}
 
 		v := c
-		if c.InConfig(k) {
+		if c.IsSet(k) {
 			v = c.Sub(k)
 		}
 
@@ -59,7 +81,9 @@ func NewRegistry(cfg *viper.Viper, context logrus.Fields) *LoggerRegistry {
 		l := newNamedLogger(k, fields, v, nil)
 		l.reg = reg
 		reg.store[k] = l
+
 	}
+
 	if len(keys) == 0 {
 		fields := make(logrus.Fields, len(context)+1)
 		for k, v := range context {

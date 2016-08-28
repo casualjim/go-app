@@ -23,7 +23,8 @@ var (
 	// ErrModuleUnknown returned when no module can be found for the specified key
 	ErrModuleUnknown error
 
-	execName func() (string, error)
+	execName       func() (string, error)
+	reloadCallback func(fsnotify.Event)
 
 	// Version of the application
 	Version string
@@ -39,20 +40,21 @@ type Module interface {
 	Init(Application) error
 	Start(Application) error
 	Stop(Application) error
+	Reload(Application) error
 }
 
 // A ModuleKey represents a key for a module.
 // Users of this package can define their own keys, this is just the type definition.
-type ModuleKey uint16
+type ModuleKey string
 
 // Application is an application level context package
 // It can be used as a kind of dependency injection container
 type Application interface {
 	// Get the module at the specified key, thread-safe
-	Get(ModuleKey, Module) error
+	Get(ModuleKey, interface{}) error
 
 	// Set the module at the specified key, this should be safe across multiple threads
-	Set(ModuleKey, Module) error
+	Set(ModuleKey, interface{}) error
 
 	// Logger gets the root logger for this application
 	Logger() logrus.FieldLogger
@@ -82,11 +84,8 @@ func createViper(name string) (*viper.Viper, error) {
 	v.AddConfigPath(".")
 
 	v.SetEnvPrefix(name)
-	if os.Getenv("DEBUG") != "" {
-		v.Debug()
-	}
 	if err := v.ReadInConfig(); err != nil {
-		if v.ConfigFileUsed() != "" {
+		if _, ok := err.(viper.UnsupportedConfigError); !ok {
 			return nil, err
 		}
 	}
@@ -101,7 +100,8 @@ func addViperRemoteConfig(v *viper.Viper) {
 }
 
 func addViperDefaults(v *viper.Viper) {
-
+	v.SetDefault("tracer", map[interface{}]interface{}{"enable": true})
+	v.SetDefault("logging", map[interface{}]interface{}{"root": map[interface{}]interface{}{"level": "info"}})
 }
 
 func ensureDefaults(name string) (string, string, error) {
@@ -144,14 +144,20 @@ func New(nme string) (Application, error) {
 
 	cfg.WatchConfig()
 	cfg.OnConfigChange(func(in fsnotify.Event) {
+		if reloadCallback != nil {
+			reloadCallback(in)
+		}
 		allLoggers.Reload()
 		allLoggers.Root().Infoln("config file changed:", in.Name)
 	})
 
+	tracer := allLoggers.Root().WithField("module", "trace")
+	trace := tracing.New("", tracer, nil)
+
 	return &defaultApplication{
 		appInfo:    appInfo,
 		rootLogger: allLoggers.Root(),
-		rootTracer: tracing.New("root", allLoggers.Root().WithField("module", "trace"), nil),
+		rootTracer: trace,
 		config:     cfg,
 		registry:   make(map[ModuleKey]reflect.Value, 100),
 		regLock:    new(sync.Mutex),
@@ -169,7 +175,7 @@ type defaultApplication struct {
 }
 
 // Get the module at the specified key, return a not found error when the module can't be found
-func (d *defaultApplication) Get(key ModuleKey, module Module) error {
+func (d *defaultApplication) Get(key ModuleKey, module interface{}) error {
 	mv := reflect.ValueOf(module)
 	if mv.Kind() != reflect.Ptr {
 		return fmt.Errorf("expected module %T to be a pointer", module)
@@ -192,7 +198,7 @@ func (d *defaultApplication) Get(key ModuleKey, module Module) error {
 	return nil
 }
 
-func (d *defaultApplication) Set(key ModuleKey, module Module) error {
+func (d *defaultApplication) Set(key ModuleKey, module interface{}) error {
 	d.regLock.Lock()
 	d.registry[key] = reflect.Indirect(reflect.ValueOf(module))
 	d.regLock.Unlock()

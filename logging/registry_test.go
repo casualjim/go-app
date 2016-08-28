@@ -166,10 +166,20 @@ func TestLogging_Registry_Root(t *testing.T) {
 
 func TestLogging_Defaults(t *testing.T) {
 	v1 := viper.New()
-	r1 := NewRegistry(v1, logrus.Fields{"some": "field"})
+	r1 := NewRegistry(v1, nil)
 	assert.Len(t, r1.store, 1)
 	assert.IsType(t, &defaultLogger{}, r1.Root())
-	assert.Equal(t, logrus.Fields{"module": "root", "some": "field"}, r1.Root().Fields())
+	assert.Equal(t, logrus.Fields{"module": "root"}, r1.Root().Fields())
+
+	r2 := NewRegistry(nil, nil)
+	assert.Len(t, r2.store, 1)
+	assert.IsType(t, &defaultLogger{}, r2.Root())
+	assert.Equal(t, logrus.Fields{"module": "root"}, r2.Root().Fields())
+
+	r3 := NewRegistry(nil, logrus.Fields{"some": "field"})
+	assert.Len(t, r3.store, 1)
+	assert.IsType(t, &defaultLogger{}, r3.Root())
+	assert.Equal(t, logrus.Fields{"module": "root", "some": "field"}, r3.Root().Fields())
 }
 
 func TestLogging_Reload(t *testing.T) {

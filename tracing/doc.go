@@ -12,7 +12,8 @@
       // do work here
   }
 
-You will then be able to get information about timings for methods.
+You will then be able to get information about timings for methods. When you don't specify a key, the package
+will walk the stack to find out the method name you want to trace. So if you don't want to incur that cost, use a key.
 
 When used with the github.com/casualjim/middlewares package you can get a JSON document
 with the report from /audit/metrics.

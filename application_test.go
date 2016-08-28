@@ -2,10 +2,14 @@ package app
 
 import (
 	"errors"
+	"io/ioutil"
+	"os"
 	"testing"
+	"time"
 
 	"github.com/Sirupsen/logrus"
 	"github.com/casualjim/go-app/logging"
+	"github.com/fsnotify/fsnotify"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -43,7 +47,43 @@ func TestApplication_Constructor(t *testing.T) {
 	assert.NotNil(t, app.regLock)
 }
 
-func TestApplication_ExeNameFailback(t *testing.T) {
+func TestApplication_InvalidConfigFile(t *testing.T) {
+	err := ioutil.WriteFile("config.json", []byte(`{]}`), 0644)
+	defer os.Remove("config.json")
+
+	if assert.NoError(t, err) {
+		_, err := New("")
+		if assert.Error(t, err) {
+			t.Log(err)
+		}
+	}
+}
+
+func TestApplication_WatchFile(t *testing.T) {
+	err := ioutil.WriteFile("config.json", []byte(`{"name": "some value"}`), 0644)
+	defer os.Remove("config.json")
+
+	if assert.NoError(t, err) {
+		latch := make(chan struct{})
+		reloadCallback = func(_ fsnotify.Event) { latch <- struct{}{} }
+		app, err := New("")
+		if assert.NoError(t, err) {
+			assert.Equal(t, "some value", app.Config().GetString("name"))
+			go func() {
+				<-time.After(1 * time.Second)
+				err := ioutil.WriteFile("config.json", []byte(`{"name": "other value"}`), 0644)
+				if err != nil {
+					t.Log(err)
+				}
+
+			}()
+			<-latch
+			assert.Equal(t, "other value", app.Config().GetString("name"))
+		}
+	}
+}
+
+func TestApplication_ExeNameFallback(t *testing.T) {
 	oldExefn := execName
 	defer func() { execName = oldExefn }()
 
@@ -108,14 +148,14 @@ func TestApplication_Logger(t *testing.T) {
 		data := child.(logging.Logger).Fields()
 		assert.Equal(t, "appModule", data["module"])
 		assert.Equal(t, "data", data["extra"])
-		// assert.Equal(t, "LoggerTest", data["app"])
+		assert.Equal(t, "LoggerTest", data["app"])
 	}
 }
 
 const (
-	firstModuleKey ModuleKey = iota
-	otherModuleKey
-	someModuleKey
+	firstModuleKey ModuleKey = "firstModule"
+	otherModuleKey           = "otherModule"
+	someModuleKey            = "someModule"
 )
 
 type otherModule struct {
