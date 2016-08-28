@@ -12,7 +12,7 @@ build:
     image: golang:1.7
     pull: true
     commands:
-      - apt-get update
+      - apt-get update -yqq
       - apt-get install -yqq rsyslog
       - rsyslogd
       - go get -u github.com/axw/gocov/gocov
@@ -28,7 +28,7 @@ build:
       - tail -n +2 ./logging/profile.out >> profile.cov
       - tail -n +2 ./logging/hooks/syslog/profile.out >> profile.cov
       - tail -n +2 ./tracing/profile.out >> profile.cov
-      - go tool cover -func profile.cov
+      - gocov convert profile.cov | gocov report
 
 publish:
   coverage:

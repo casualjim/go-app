@@ -65,8 +65,7 @@ func TestApplication_WatchFile(t *testing.T) {
 
 	if assert.NoError(t, err) {
 		latch := make(chan struct{})
-		reloadCallback = func(_ fsnotify.Event) { latch <- struct{}{} }
-		app, err := New("")
+		app, err := newWithCallback("", func(_ fsnotify.Event) { latch <- struct{}{} })
 		if assert.NoError(t, err) {
 			assert.Equal(t, "some value", app.Config().GetString("name"))
 			go func() {
@@ -75,7 +74,6 @@ func TestApplication_WatchFile(t *testing.T) {
 				if err != nil {
 					t.Log(err)
 				}
-
 			}()
 			<-latch
 			assert.Equal(t, "other value", app.Config().GetString("name"))

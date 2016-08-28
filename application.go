@@ -23,8 +23,7 @@ var (
 	// ErrModuleUnknown returned when no module can be found for the specified key
 	ErrModuleUnknown error
 
-	execName       func() (string, error)
-	reloadCallback func(fsnotify.Event)
+	execName func() (string, error)
 
 	// Version of the application
 	Version string
@@ -123,8 +122,7 @@ func ensureDefaults(name string) (string, string, error) {
 	return name, version, nil
 }
 
-// New application with the specified name, at the specified basepath
-func New(nme string) (Application, error) {
+func newWithCallback(nme string, reload func(fsnotify.Event)) (Application, error) {
 	name, version, err := ensureDefaults(nme)
 	if err != nil {
 		return nil, err
@@ -144,8 +142,8 @@ func New(nme string) (Application, error) {
 
 	cfg.WatchConfig()
 	cfg.OnConfigChange(func(in fsnotify.Event) {
-		if reloadCallback != nil {
-			reloadCallback(in)
+		if reload != nil {
+			reload(in)
 		}
 		allLoggers.Reload()
 		allLoggers.Root().Infoln("config file changed:", in.Name)
@@ -162,6 +160,11 @@ func New(nme string) (Application, error) {
 		registry:   make(map[ModuleKey]reflect.Value, 100),
 		regLock:    new(sync.Mutex),
 	}, nil
+}
+
+// New application with the specified name, at the specified basepath
+func New(nme string) (Application, error) {
+	return newWithCallback(nme, nil)
 }
 
 type defaultApplication struct {
