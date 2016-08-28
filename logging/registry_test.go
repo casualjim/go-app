@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/Sirupsen/logrus"
+	"github.com/kr/pretty"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 )
@@ -65,7 +66,7 @@ func TestLogging_NewRegistry(t *testing.T) {
 	v1 := viper.New()
 	v1.SetConfigType("YAML")
 	if assert.NoError(t, v1.ReadConfig(bytes.NewBuffer(rc1))) {
-		r1 := NewRegistry(v1)
+		r1 := NewRegistry(v1, nil)
 		assert.Equal(t, v1.Sub("logging"), r1.config)
 		l1, ok1 := r1.store["root"]
 		if assert.True(t, ok1) {
@@ -78,7 +79,7 @@ func TestLogging_NewRegistry(t *testing.T) {
 	v2 := viper.New()
 	v2.SetConfigType("YAML")
 	if assert.NoError(t, v2.ReadConfig(bytes.NewBuffer(rc2))) {
-		r2 := NewRegistry(v2)
+		r2 := NewRegistry(v2, nil)
 		assert.Equal(t, v2, r2.config)
 		l2, ok2 := r2.store["root"]
 
@@ -92,15 +93,21 @@ func TestLogging_NewRegistry(t *testing.T) {
 	v3 := viper.New()
 	v3.SetConfigType("YAML")
 	if assert.NoError(t, v3.ReadConfig(bytes.NewBuffer(rc3))) {
-		r3 := NewRegistry(v3)
+		r3 := NewRegistry(v3, nil)
 		assert.Equal(t, v3, r3.config)
+		assert.Equal(t, "PagerDuty", r3.config.GetString("alerts.name"))
 		l3, ok3 := r3.store["alerts"]
 
 		if assert.True(t, ok3) {
-			l := l3.(*defaultLogger)
-			assert.Equal(t, logrus.InfoLevel, l.Entry.Logger.Level)
-			assert.IsType(t, &logrus.JSONFormatter{}, l.Logger.Formatter)
-			assert.Equal(t, "PagerDuty", l.Data["module"])
+			l33 := l3.(*defaultLogger)
+			assert.Equal(t, logrus.InfoLevel, l33.Entry.Logger.Level)
+			assert.IsType(t, &logrus.JSONFormatter{}, l33.Logger.Formatter)
+
+			if !assert.Equal(t, "PagerDuty", l33.Entry.Data["module"], pretty.Sprint(l33.config.AllSettings())) {
+				pretty.Println(v3.AllSettings())
+				pretty.Println(l33.path)
+			}
+			assert.Equal(t, "PagerDuty", l33.config.GetString("name"))
 		}
 	}
 
@@ -110,7 +117,7 @@ func TestLogging_Registry_GetOK(t *testing.T) {
 	v1 := viper.New()
 	v1.SetConfigType("YAML")
 	if assert.NoError(t, v1.ReadConfig(bytes.NewBuffer(rc1))) {
-		r1 := NewRegistry(v1)
+		r1 := NewRegistry(v1, nil)
 		assert.Equal(t, v1.Sub("logging"), r1.config)
 		l1, ok1 := r1.GetOK("root")
 		if assert.True(t, ok1) {
@@ -128,7 +135,7 @@ func TestLogging_Registry_Get(t *testing.T) {
 	v1 := viper.New()
 	v1.SetConfigType("YAML")
 	if assert.NoError(t, v1.ReadConfig(bytes.NewBuffer(rc1))) {
-		r1 := NewRegistry(v1)
+		r1 := NewRegistry(v1, nil)
 		assert.Equal(t, v1.Sub("logging"), r1.config)
 		l1 := r1.Get("root")
 		if assert.NotNil(t, l1) {
@@ -145,22 +152,24 @@ func TestLogging_Registry_Root(t *testing.T) {
 	v1 := viper.New()
 	v1.SetConfigType("YAML")
 	if assert.NoError(t, v1.ReadConfig(bytes.NewBuffer(rc1))) {
-		r1 := NewRegistry(v1)
+		r1 := NewRegistry(v1, logrus.Fields{"some": "field"})
 		assert.Equal(t, v1.Sub("logging"), r1.config)
 		l1 := r1.Root()
 		if assert.NotNil(t, l1) {
 			l := l1.(*defaultLogger)
 			assert.Equal(t, logrus.DebugLevel, l.Entry.Logger.Level)
 			assert.IsType(t, &logrus.JSONFormatter{}, l.Logger.Formatter)
+			assert.Equal(t, logrus.Fields{"module": "root", "some": "field"}, l.Data)
 		}
 	}
 }
 
 func TestLogging_Defaults(t *testing.T) {
 	v1 := viper.New()
-	r1 := NewRegistry(v1)
+	r1 := NewRegistry(v1, logrus.Fields{"some": "field"})
 	assert.Len(t, r1.store, 1)
 	assert.IsType(t, &defaultLogger{}, r1.Root())
+	assert.Equal(t, logrus.Fields{"module": "root", "some": "field"}, r1.Root().Fields())
 }
 
 func TestLogging_Reload(t *testing.T) {
@@ -169,7 +178,7 @@ func TestLogging_Reload(t *testing.T) {
 	v1.SetConfigType("yaml")
 	if assert.NoError(v1.ReadConfig(bytes.NewBuffer(rc4))) {
 		// create registry
-		reg := NewRegistry(v1)
+		reg := NewRegistry(v1, nil)
 		root := reg.Root().(*defaultLogger)
 		alerts := reg.Get("alerts").(*defaultLogger)
 		// create nested child loggers

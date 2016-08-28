@@ -24,7 +24,7 @@ type LoggerRegistry struct {
 }
 
 // NewRegistry creates a new logger registry
-func NewRegistry(cfg *viper.Viper) *LoggerRegistry {
+func NewRegistry(cfg *viper.Viper, context logrus.Fields) *LoggerRegistry {
 	c := cfg
 	if c.InConfig("logging") {
 		c = cfg.Sub("logging")
@@ -39,26 +39,37 @@ func NewRegistry(cfg *viper.Viper) *LoggerRegistry {
 	}
 
 	for _, k := range keys {
+		// no sharing of context, so copy
+		fields := make(logrus.Fields, len(context)+1)
+		for kk, vv := range context {
+			fields[kk] = vv
+		}
+
 		v := c
 		if c.InConfig(k) {
 			v = c.Sub(k)
 		}
 
 		addLoggingDefaults(v)
-
-		nm := k
+		fields["module"] = k
 		if v.IsSet("name") {
-			nm = v.GetString("name")
+			fields["module"] = v.GetString("name")
 		}
 
-		l := newNamedLogger(k, logrus.Fields{"module": nm}, v, nil)
+		l := newNamedLogger(k, fields, v, nil)
 		l.reg = reg
-		reg.Register(k, l)
+		reg.store[k] = l
 	}
 	if len(keys) == 0 {
-		l := newNamedLogger(RootName, logrus.Fields{"module": RootName}, c, nil)
+		fields := make(logrus.Fields, len(context)+1)
+		for k, v := range context {
+			fields[k] = v
+		}
+
+		fields["module"] = RootName
+		l := newNamedLogger(RootName, fields, c, nil)
 		l.reg = reg
-		reg.Register(RootName, l)
+		reg.store[RootName] = l
 	}
 
 	return reg

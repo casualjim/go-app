@@ -26,7 +26,7 @@ type Tracer interface {
 // this is equivalent to
 //
 //      name: trace
-func NewTracer(name string, logger logrus.FieldLogger, registry metrics.Registry) Tracer {
+func New(name string, logger logrus.FieldLogger, registry metrics.Registry) Tracer {
 	nm := name
 	if nm == "" {
 		nm = trace

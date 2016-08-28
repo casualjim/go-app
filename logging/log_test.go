@@ -27,7 +27,10 @@ func TestLogging_ParseLevel(t *testing.T) {
 
 	prevOut := logrus.StandardLogger().Out
 	defer logrus.SetOutput(prevOut)
+	origDebug := os.Getenv("DEBUG")
+	defer os.Setenv("DEBUG", origDebug)
 
+	os.Setenv("DEBUG", "1")
 	var buf bytes.Buffer
 	logrus.SetOutput(&buf)
 	assert.Equal(t, logrus.ErrorLevel, parseLevel(""))
@@ -36,7 +39,18 @@ func TestLogging_ParseLevel(t *testing.T) {
 	var buf2 bytes.Buffer
 	logrus.SetOutput(&buf2)
 	assert.Equal(t, logrus.ErrorLevel, parseLevel("not a level"))
-	assert.NotEmpty(t, buf.String())
+	assert.NotEmpty(t, buf2.String())
+
+	os.Setenv("DEBUG", "")
+	var buf3 bytes.Buffer
+	logrus.SetOutput(&buf3)
+	assert.Equal(t, logrus.ErrorLevel, parseLevel(""))
+	assert.Empty(t, buf3.String())
+
+	var buf4 bytes.Buffer
+	logrus.SetOutput(&buf4)
+	assert.Equal(t, logrus.ErrorLevel, parseLevel("not a level"))
+	assert.Empty(t, buf4.String())
 }
 
 func TestLogging_AddDefaults(t *testing.T) {
@@ -107,7 +121,7 @@ root:
 	c := viper.New()
 	c.SetConfigType("YAML")
 	if assert.NoError(t, c.ReadConfig(bytes.NewBuffer(cfgb))) {
-		reg := NewRegistry(c)
+		reg := NewRegistry(c, logrus.Fields{"some": "field"})
 		// _ = reg
 		lr := reg.Root()
 		rc := c.Sub(RootName)
@@ -116,14 +130,14 @@ root:
 		if assert.NotNil(t, lr) {
 			l := lr.(*defaultLogger)
 			assert.Equal(t, rc, l.config)
-			assert.Equal(t, logrus.Fields{"module": "root"}, l.Entry.Data)
+			assert.Equal(t, logrus.Fields{"module": "root", "some": "field"}, l.Entry.Data)
 			assert.Equal(t, logrus.DebugLevel, l.Entry.Logger.Level)
 			assert.IsType(t, &logrus.TextFormatter{}, l.Entry.Logger.Formatter)
 		}
 
 		cl := lr.New("someModule", logrus.Fields{"other": "value"}).(*defaultLogger)
 		assert.Equal(t, mergeConfig(rc.Sub("someModule"), rc), cl.config)
-		assert.Equal(t, logrus.Fields{"module": "someModule", "other": "value"}, cl.Entry.Data)
+		assert.Equal(t, logrus.Fields{"module": "someModule", "some": "field", "other": "value"}, cl.Entry.Data)
 		assert.Equal(t, logrus.WarnLevel, cl.Entry.Logger.Level)
 		assert.IsType(t, &logrus.TextFormatter{}, cl.Entry.Logger.Formatter)
 
@@ -146,7 +160,7 @@ root:
 	c.SetConfigType("YAML")
 	if assert.NoError(t, c.ReadConfig(bytes.NewBuffer(cfgb))) {
 
-		reg := NewRegistry(c)
+		reg := NewRegistry(c, nil)
 		l := reg.Root().(*defaultLogger)
 		rc := c.Sub(RootName)
 		addLoggingDefaults(rc)
@@ -180,7 +194,7 @@ root:
 	c.SetConfigType("YAML")
 	if assert.NoError(t, c.ReadConfig(bytes.NewBuffer(cfgb))) {
 
-		reg := NewRegistry(c)
+		reg := NewRegistry(c, nil)
 		l := reg.Root()
 		cl := l.New("otherModule", logrus.Fields{"other": "value"})
 		cl2 := l.New("otherModule", logrus.Fields{"other": "value"})
@@ -198,7 +212,7 @@ func TestLogging_LoggerConfigure(t *testing.T) {
 
 	l := newNamedLogger("alerts", logrus.Fields{"mode": "dev"}, c, nil)
 	assert.Equal(t, c, l.config)
-	assert.Equal(t, logrus.Fields{"mode": "dev"}, l.Entry.Data)
+	assert.Equal(t, logrus.Fields{"mode": "dev"}, l.Fields())
 	assert.Equal(t, logrus.DebugLevel, l.Entry.Logger.Level)
 	assert.Equal(t, os.Stdout, l.Entry.Logger.Out)
 	assert.IsType(t, &logrus.JSONFormatter{}, l.Entry.Logger.Formatter)
@@ -217,7 +231,7 @@ func TestLogging_LoggerConfigure(t *testing.T) {
 	c.Set("hooks", map[interface{}]interface{}{"name": "other", "host": "example", "port": 4444, "replace": true})
 	l.Configure(c)
 	assert.Equal(t, c, l.config)
-	assert.Equal(t, logrus.Fields{"mode": "dev"}, l.Entry.Data)
+	assert.Equal(t, logrus.Fields{"mode": "dev"}, l.Fields())
 	assert.Equal(t, logrus.WarnLevel, l.Entry.Logger.Level)
 	assert.Equal(t, os.Stderr, l.Entry.Logger.Out)
 	assert.IsType(t, &logrus.TextFormatter{}, l.Entry.Logger.Formatter)

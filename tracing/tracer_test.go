@@ -10,13 +10,13 @@ import (
 
 func TestNewTracer(t *testing.T) {
 	assert := assert.New(t)
-	tracer := NewTracer("testModule", nil, nil).(*defaultTracing)
+	tracer := New("testModule", nil, nil).(*defaultTracing)
 	if assert.NotNil(tracer) {
 		assert.NotNil(tracer.logger)
 		assert.NotNil(tracer.registry)
 	}
 
-	tr2 := NewTracer("", nil, nil).(*defaultTracing)
+	tr2 := New("", nil, nil).(*defaultTracing)
 	if assert.NotNil(tr2) {
 		assert.NotNil(tr2.logger)
 		assert.NotNil(tr2.registry)
@@ -36,10 +36,10 @@ func TestTracerLog(t *testing.T) {
 	defer logrus.SetOutput(prevOut)
 	defer logrus.SetLevel(prevLevel)
 
-	tracer1 := NewTracer("testModule", nil, nil).(*defaultTracing)
+	tracer1 := New("testModule", nil, nil).(*defaultTracing)
 	if assert.NotNil(tracer1) {
 		testFunc(tracer1)
-		tracer2 := NewTracer("testModule", nil, nil).(*defaultTracing)
+		tracer2 := New("testModule", nil, nil).(*defaultTracing)
 		if assert.NotNil(tracer2) {
 			tracer2.Trace("myMethod")()
 		}

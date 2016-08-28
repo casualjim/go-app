@@ -1,6 +1,7 @@
 package logging
 
 import (
+	"os"
 	"strings"
 
 	"github.com/Sirupsen/logrus"
@@ -15,7 +16,9 @@ func addLoggingDefaults(cfg *viper.Viper) {
 func parseLevel(level string) logrus.Level {
 	lvl, err := logrus.ParseLevel(level)
 	if err != nil {
-		logrus.Warnf("%v, falling back to default of error", err)
+		if os.Getenv("DEBUG") != "" {
+			logrus.Infof("%v, falling back to default of error", err)
+		}
 		return logrus.ErrorLevel
 	}
 	return lvl
@@ -97,6 +100,7 @@ type Logger interface {
 	logrus.FieldLogger
 	New(string, logrus.Fields) Logger
 	Configure(v *viper.Viper)
+	Fields() logrus.Fields
 }
 
 type defaultLogger struct {
@@ -143,4 +147,8 @@ func (d *defaultLogger) New(name string, fields logrus.Fields) Logger {
 func (d *defaultLogger) Configure(cfg *viper.Viper) {
 	configureLogger(d.Logger, d.Data, cfg)
 	d.config = cfg
+}
+
+func (d *defaultLogger) Fields() logrus.Fields {
+	return d.Data
 }

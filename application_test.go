@@ -1,14 +1,17 @@
 package app
 
 import (
+	"errors"
 	"testing"
 
+	"github.com/Sirupsen/logrus"
 	"github.com/casualjim/go-app/logging"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestApplication_Constructor(t *testing.T) {
-	app := New("", "").(*defaultApplication)
+	appi, _ := New("")
+	app := appi.(*defaultApplication)
 
 	if assert.NotNil(t, app.appInfo) {
 		info := app.appInfo
@@ -20,7 +23,8 @@ func TestApplication_Constructor(t *testing.T) {
 	}
 
 	Version = "0.1.0"
-	app2 := New("the-app", "/v1").(*defaultApplication)
+	appi2, _ := New("the-app")
+	app2 := appi2.(*defaultApplication)
 	Version = ""
 
 	if assert.NotNil(t, app2.appInfo) {
@@ -29,18 +33,35 @@ func TestApplication_Constructor(t *testing.T) {
 		assert.Equal(t, "0.1.0", info.Version)
 		assert.NotEmpty(t, info.Name)
 		assert.Equal(t, "the-app", info.Name)
-		assert.Equal(t, "/v1", info.BasePath)
+		assert.Equal(t, "/", info.BasePath)
 	}
 
 	assert.NotNil(t, app.rootLogger)
-	assert.NotNil(t, app.rootTracer)
-	assert.NotNil(t, app.config)
+	assert.NotNil(t, app.Tracer())
+	assert.NotNil(t, app.Config())
 	assert.NotNil(t, app.registry)
 	assert.NotNil(t, app.regLock)
 }
 
+func TestApplication_ExeNameFailback(t *testing.T) {
+	oldExefn := execName
+	defer func() { execName = oldExefn }()
+
+	execName = func() (string, error) { return "app1", nil }
+	app1, _ := New("")
+	assert.Equal(t, "app1", app1.Info().Name)
+
+	execName = func() (string, error) { return "github.com/some/package/app2", nil }
+	app2, _ := New("")
+	assert.Equal(t, "app2", app2.Info().Name)
+
+	execName = func() (string, error) { return "", errors.New("expected") }
+	_, err := New("")
+	assert.EqualError(t, err, "expected")
+}
+
 func TestApplication_GetModule(t *testing.T) {
-	app := New("GetModuleTest", "/")
+	app, _ := New("GetModuleTest")
 	const orig = "original"
 
 	fm := new(firstModule)
@@ -54,6 +75,9 @@ func TestApplication_GetModule(t *testing.T) {
 		assert.Equal(t, fm.arb, fm2.arb)
 	}
 
+	var fm3 firstModule
+	assert.EqualError(t, app.Get(ModuleKey(300), &fm3), ErrModuleUnknown.Error())
+
 	var om otherModule
 	err := app.Get(firstModuleKey, &om)
 	assert.EqualError(t, err, "can't assign app.firstModule to app.otherModule")
@@ -64,7 +88,8 @@ func TestApplication_GetModule(t *testing.T) {
 }
 
 func TestApplication_SetModule(t *testing.T) {
-	app := New("SetModuleTest", "/").(*defaultApplication)
+	appi, _ := New("SetModuleTest")
+	app := appi.(*defaultApplication)
 
 	fm := new(firstModule)
 	fm.arb = "original"
@@ -74,17 +99,17 @@ func TestApplication_SetModule(t *testing.T) {
 }
 
 func TestApplication_Logger(t *testing.T) {
-	app := New("LoggerTest", "")
+	app, _ := New("LoggerTest")
 	assert.NotNil(t, app.Logger())
 	assert.Implements(t, (*logging.Logger)(nil), app.Logger())
 
-	// child := app.NewLogger("appModule", logrus.Fields{"extra": "data"})
-	// if assert.NotNil(t, child) && assert.Implements(t, (*logging.Logger)(nil), child) {
-	// 	data := child.(logging.Logger).Fields()
-	// 	assert.Equal(t, "appModule", data["module"])
-	// 	assert.Equal(t, "data", data["extra"])
-	// 	assert.Equal(t, "LoggerTest", data["app"])
-	// }
+	child := app.NewLogger("appModule", logrus.Fields{"extra": "data"})
+	if assert.NotNil(t, child) && assert.Implements(t, (*logging.Logger)(nil), child) {
+		data := child.(logging.Logger).Fields()
+		assert.Equal(t, "appModule", data["module"])
+		assert.Equal(t, "data", data["extra"])
+		// assert.Equal(t, "LoggerTest", data["app"])
+	}
 }
 
 const (

@@ -13,5 +13,8 @@
   }
 
 You will then be able to get information about timings for methods.
+
+When used with the github.com/casualjim/middlewares package you can get a JSON document
+with the report from /audit/metrics.
 */
 package tracing

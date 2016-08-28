@@ -21,11 +21,18 @@ import (
 
 var (
 	// ErrModuleUnknown returned when no module can be found for the specified key
-	ErrModuleUnknown = errors.New("unknown module")
+	ErrModuleUnknown error
+
+	execName func() (string, error)
 
 	// Version of the application
 	Version string
 )
+
+func init() {
+	ErrModuleUnknown = errors.New("unknown module")
+	execName = osext.Executable
+}
 
 // A Module is a component that has a specific lifecycle
 type Module interface {
@@ -56,9 +63,6 @@ type Application interface {
 	// Tracer returns the root
 	Tracer() tracing.Tracer
 
-	// NewTracer creates a new named tracer for this application
-	NewTracer(string) tracing.Tracer
-
 	// Config returns the viper config for this application
 	Config() *viper.Viper
 
@@ -66,7 +70,7 @@ type Application interface {
 	Info() cjm.AppInfo
 }
 
-func createViper(name string) *viper.Viper {
+func createViper(name string) (*viper.Viper, error) {
 	v := viper.New()
 	v.SetConfigName("config")
 
@@ -78,14 +82,18 @@ func createViper(name string) *viper.Viper {
 	v.AddConfigPath(".")
 
 	v.SetEnvPrefix(name)
-	v.ReadInConfig()
-	// if err := v.ReadInConfig(); err != nil {
-	// 	logrus.Fatalln(err)
-	// }
+	if os.Getenv("DEBUG") != "" {
+		v.Debug()
+	}
+	if err := v.ReadInConfig(); err != nil {
+		if v.ConfigFileUsed() != "" {
+			return nil, err
+		}
+	}
 	v.AutomaticEnv()
 
 	addViperDefaults(v)
-	return v
+	return v, nil
 }
 
 func addViperRemoteConfig(v *viper.Viper) {
@@ -96,7 +104,7 @@ func addViperDefaults(v *viper.Viper) {
 
 }
 
-func ensureDefaults(name, basePath string) (string, string, string) {
+func ensureDefaults(name string) (string, string, error) {
 	// configure version defaults
 	version := "dev"
 	if Version != "" {
@@ -105,50 +113,49 @@ func ensureDefaults(name, basePath string) (string, string, string) {
 
 	// configure name defaults
 	if name == "" {
-		exe, err := osext.Executable()
+		exe, err := execName()
 		if err != nil {
-			logrus.Fatalln(err)
+			return "", "", err
 		}
-		name = exe
+		name = filepath.Base(exe)
 	}
 
-	// configure basepath
-	if basePath == "" {
-		basePath = "/"
-	}
-
-	return name, version, basePath
+	return name, version, nil
 }
 
 // New application with the specified name, at the specified basepath
-func New(nme, basePth string) Application {
-	name, version, basePath := ensureDefaults(nme, basePth)
-
+func New(nme string) (Application, error) {
+	name, version, err := ensureDefaults(nme)
+	if err != nil {
+		return nil, err
+	}
 	appInfo := cjm.AppInfo{
-		Name:     filepath.Base(name),
-		BasePath: basePath,
+		Name:     name,
+		BasePath: "/",
 		Version:  version,
 		Pid:      os.Getpid(),
 	}
 
-	cfg := createViper(name)
-	allLoggers := logging.NewRegistry(cfg)
+	cfg, err := createViper(name)
+	if err != nil {
+		return nil, err
+	}
+	allLoggers := logging.NewRegistry(cfg, logrus.Fields{"app": appInfo.Name})
 
 	cfg.WatchConfig()
 	cfg.OnConfigChange(func(in fsnotify.Event) {
 		allLoggers.Reload()
-		// TODO: implement reconfiguring logger tree and tracer tree
-		logrus.Infoln("config file changed:", in.Name)
+		allLoggers.Root().Infoln("config file changed:", in.Name)
 	})
 
 	return &defaultApplication{
 		appInfo:    appInfo,
 		rootLogger: allLoggers.Root(),
-		rootTracer: tracing.NewTracer("root", allLoggers.Root().WithField("name", "tracer"), nil),
+		rootTracer: tracing.New("root", allLoggers.Root().WithField("module", "trace"), nil),
 		config:     cfg,
 		registry:   make(map[ModuleKey]reflect.Value, 100),
 		regLock:    new(sync.Mutex),
-	}
+	}, nil
 }
 
 type defaultApplication struct {
@@ -169,20 +176,19 @@ func (d *defaultApplication) Get(key ModuleKey, module Module) error {
 	}
 
 	d.regLock.Lock()
+	defer d.regLock.Unlock()
+
 	mod, ok := d.registry[key]
 	if !ok {
-		d.regLock.Unlock()
 		return ErrModuleUnknown
 	}
 
 	av := reflect.Indirect(mv)
 	if !mod.Type().AssignableTo(av.Type()) {
-		d.regLock.Unlock()
 		return fmt.Errorf("can't assign %T to %T", mod.Interface(), av.Interface())
 	}
 
 	av.Set(mod)
-	d.regLock.Unlock()
 	return nil
 }
 
@@ -203,10 +209,6 @@ func (d *defaultApplication) NewLogger(name string, ctx logrus.Fields) logrus.Fi
 
 func (d *defaultApplication) Tracer() tracing.Tracer {
 	return d.rootTracer
-}
-
-func (d *defaultApplication) NewTracer(name string) tracing.Tracer {
-	return tracing.NewTracer(name, d.rootLogger.WithFields(logrus.Fields{"name": name + "-tracer"}), nil)
 }
 
 func (d *defaultApplication) Config() *viper.Viper {
