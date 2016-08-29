@@ -430,7 +430,7 @@ func TestApplication_GetModule(t *testing.T) {
 	}
 
 	var fm3 firstModule
-	assert.EqualError(t, app.Get(ModuleKey(300), &fm3), ErrModuleUnknown.Error())
+	assert.EqualError(t, app.Get(Key(300), &fm3), ErrModuleUnknown.Error())
 
 	var om otherModule
 	err := app.Get(firstModuleKey, &om)
@@ -467,9 +467,9 @@ func TestApplication_Logger(t *testing.T) {
 }
 
 const (
-	firstModuleKey ModuleKey = "firstModule"
-	otherModuleKey           = "otherModule"
-	someModuleKey            = "someModule"
+	firstModuleKey Key = "firstModule"
+	otherModuleKey     = "otherModule"
+	someModuleKey      = "someModule"
 )
 
 type otherModule struct {

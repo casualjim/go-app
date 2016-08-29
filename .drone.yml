@@ -42,5 +42,5 @@ publish:
   coverage:
     server: https://coverage.vmware.run
     token: $$GITHUB_TOKEN
-    must_increase: true
+    # must_increase: true
  

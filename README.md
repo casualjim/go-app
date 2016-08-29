@@ -20,6 +20,32 @@ This package is one of those tools you won't always need, but when you need it y
 * watching of configuration file, for online reconfiguration of loggers and modules
 * watching of remote configuration, for online reconfiguration of loggers and modules
 
+## Config providers
+
+By default the the application will look for config files in order of precedence: 
+
+* $HOME/.config/$APP_NAME
+* /etc/$APP_NAME
+* etc
+* $CWD
+
+You can customize those search paths through setting the environment variable: `CONFIG_PATH`
+eg. `export CONFIG_PATH=/etc/my-app:etc`
+
+For the remote config providers you need to set a URL for the remote provider.
+You can optionally set a keyring, when present the remote configuration is expected to be encrypted with the public key of the gpg keyring.
+
+To configure the url you need to set the `CONFIG_REMOTE_URL` environment variable:
+
+```
+export CONFIG_REMOTE_URL="etcd://localhost:2379/[app-name]/config.[type]"
+export CONFIG_REMOTE_URL="consul://localhost:8500/[app-name]/config.[type]"
+```
+
+The extension of the file path is used to determine the content type for the key.
+
+When you make a change to the config in the remote provider or in the local file the system will reload the loggers, and trigger the appropriate hook of registered modules. 
+
 ## Tracer
 
 Using the tracer requires that you put a line a the top of a method:
@@ -70,33 +96,20 @@ To use it, a package that serves as a module needs to export a method or variabl
 ```go
 package orders
 
-var Module app.Module
-func init() {
-  Module = new(module)
-}
+import "github.com/casualjim/go-app"
 
-type module struct {
-
-}
-
-func (m *module) Init(app app.Application) error {
-  orders := new(ordersService)
-  app.Set("ordersService", orders)
-  orders.app = app 
-  return nil
-}
-
-func (m *module) Start(app app.Application) error {
-  // perform any potentially needed cleanup at start of process
-}
-
-func (m *module) Stop(app app.Application) error {
-  // perform any potentially needed cleanup before shutdown of process
-}
-
-func (m *module) Reload(app app.Application) error {
-  // peform any necessary configuration of the active modules, potentially enable/disable new services etc
-}
+var Module = app.MakeModule(
+  app.Init(func(app app.Application) error {
+    orders := new(ordersService)
+    app.Set("ordersService", orders)
+    orders.app = app 
+    return nil
+  }),
+  app.Reload(func(app app.Application) error {
+    // you can reconfigure the services that belong to this module here
+    return nil
+  })
+)
 
 type Order struct {
   ID      int64

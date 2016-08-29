@@ -40,26 +40,21 @@ func init() {
 	log.SetFlags(0)
 }
 
-// A Module is a component that has a specific lifecycle
-type Module interface {
-	Init(Application) error
-	Start(Application) error
-	Stop(Application) error
-	Reload(Application) error
-}
-
-// A ModuleKey represents a key for a module.
+// A Key represents a key for a module.
 // Users of this package can define their own keys, this is just the type definition.
-type ModuleKey string
+type Key string
 
 // Application is an application level context package
 // It can be used as a kind of dependency injection container
 type Application interface {
+	// Add a module to the application context
+	Add(...Module) error
+
 	// Get the module at the specified key, thread-safe
-	Get(ModuleKey, interface{}) error
+	Get(Key, interface{}) error
 
 	// Set the module at the specified key, this should be safe across multiple threads
-	Set(ModuleKey, interface{}) error
+	Set(Key, interface{}) error
 
 	// Logger gets the root logger for this application
 	Logger() logrus.FieldLogger
@@ -205,7 +200,7 @@ func newWithCallback(nme string, reload func(fsnotify.Event)) (Application, erro
 		allLoggers: allLoggers,
 		rootTracer: trace,
 		config:     cfg,
-		registry:   make(map[ModuleKey]reflect.Value, 100),
+		registry:   make(map[Key]reflect.Value, 100),
 		regLock:    new(sync.Mutex),
 	}
 	app.watchConfigurations(func(in fsnotify.Event) {
@@ -226,11 +221,11 @@ func New(nme string) (Application, error) {
 type defaultApplication struct {
 	appInfo    cjm.AppInfo
 	allLoggers *logging.Registry
-	rootLogger logging.Logger
 	rootTracer tracing.Tracer
 	config     *viper.Viper
+	modules    []Module
 
-	registry map[ModuleKey]reflect.Value
+	registry map[Key]reflect.Value
 	regLock  *sync.Mutex
 }
 
@@ -253,8 +248,15 @@ func (d *defaultApplication) watchConfigurations(reload func(fsnotify.Event)) {
 	}
 }
 
+func (d *defaultApplication) Add(modules ...Module) error {
+	if len(modules) > 0 {
+		d.modules = append(d.modules, modules...)
+	}
+	return nil
+}
+
 // Get the module at the specified key, return a not found error when the module can't be found
-func (d *defaultApplication) Get(key ModuleKey, module interface{}) error {
+func (d *defaultApplication) Get(key Key, module interface{}) error {
 	mv := reflect.ValueOf(module)
 	if mv.Kind() != reflect.Ptr {
 		return fmt.Errorf("expected module %T to be a pointer", module)
@@ -277,7 +279,7 @@ func (d *defaultApplication) Get(key ModuleKey, module interface{}) error {
 	return nil
 }
 
-func (d *defaultApplication) Set(key ModuleKey, module interface{}) error {
+func (d *defaultApplication) Set(key Key, module interface{}) error {
 	d.regLock.Lock()
 	d.registry[key] = reflect.Indirect(reflect.ValueOf(module))
 	d.regLock.Unlock()
