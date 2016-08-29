@@ -24,8 +24,6 @@ build:
       - go get -u github.com/axw/gocov/gocov
       - go get -u gopkg.in/matm/v1/gocov-html
       - go get -u github.com/cee-dub/go-junit-report
-      - go get -u github.com/coreos/etcd/etcdctl
-      - go get -u github.com/xordataexchange/crypt/bin/crypt
       - go get -t ./...
       - go test -race ./...
       - go test -cover -covermode=atomic -coverprofile=profile.out .
