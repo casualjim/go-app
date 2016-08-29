@@ -127,7 +127,31 @@ func (o *ordersService) Create(o *Order) error {
 }
 ```
 
-Ideally the module struct is completely stateless which makes using it from concurrent tests easier.
+In the main package you would then write a main function that could look like this:
+
+```
+func main() {
+  app := app.New("")
+  app.Add(orders.Module)
+
+  if err := app.Init(); err != nil {
+    app.Logger().Fatalln(err)
+  }
+
+  app.Logger().Infoln("application initialized, starting...")
+
+  if err := app.Start(); err != nil {
+    app.Logger().Fatalln(err)
+  }
+
+  app.Logger().Infoln("application initialized, starting...")
+  // do a blocking operation here, like run a http server
+
+  if err := app.Stop(); err != nil {
+    app.Logger().Fatalln(err)
+  }
+}
+```
 
 ## Logger Configuration
 

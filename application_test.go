@@ -29,6 +29,11 @@ const (
   "location": "a wonderful, magical place among the stars",
   "count": 3
 }`
+	conyaml2 = `---
+name: go-app.test
+location: "a wonderful, magical place among the stars"
+count: 3
+`
 )
 
 func TestApplication_RemoteErrors(t *testing.T) {
@@ -127,6 +132,60 @@ func TestApplication_EtcdUnencrypted(t *testing.T) {
 }
 
 func TestApplication_WatchEtcd(t *testing.T) {
+	defer os.Unsetenv("CONFIG_KEYRING")
+	defer os.Unsetenv("CONFIG_REMOTE_URL")
+	os.Setenv("CONFIG_KEYRING", ".secring.gpg")
+	os.Setenv("CONFIG_REMOTE_URL", "etcd://127.0.0.1:2379/etcdenc/config.json")
+
+	etcdc, err := etcd.New([]string{"http://127.0.0.1:2379"})
+	if assert.NoError(t, err) {
+		encrypted, err := encrypt([]byte(conjson))
+		if assert.NoError(t, err) {
+			if assert.NoError(t, etcdc.Set("/etcdenc/config.json", encrypted)) {
+				b, err := etcdc.Get("/etcdenc/config.json")
+				if assert.NoError(t, err) {
+					assert.Equal(t, string(encrypted), string(b))
+
+					latch := make(chan struct{})
+					app, err := newWithCallback("", func(_ fsnotify.Event) { latch <- struct{}{} })
+					if assert.NoError(t, err) {
+						v := app.Config()
+						assert.Equal(t, "go-app.test", v.GetString("name"))
+						assert.Equal(t, "a wonderful, magical place among the stars", v.Get("location"))
+						assert.Equal(t, 1, v.GetInt("count"))
+						encrypted2, err := encrypt([]byte(conyaml2))
+
+						if assert.NoError(t, err) {
+							go func() {
+								<-time.After(1 * time.Second)
+								err = etcdc.Set("/etcdenc/config.json", encrypted2)
+								if err != nil {
+									t.Log(err)
+								}
+							}()
+
+							select {
+							case <-latch:
+								b, err := etcdc.Get("/etcdenc/config.json")
+								if assert.NoError(t, err) {
+									assert.Equal(t, string(encrypted2), string(b))
+
+									assert.Equal(t, "go-app.test", v.GetString("name"))
+									assert.Equal(t, "a wonderful, magical place among the stars", v.Get("location"))
+									assert.Equal(t, 3, v.GetInt("count"))
+								}
+							case <-time.After(2 * time.Second):
+								t.Log("watch timed out, expected")
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+func TestApplication_WatchEtcdError(t *testing.T) {
 	defer os.Unsetenv("CONFIG_KEYRING")
 	defer os.Unsetenv("CONFIG_REMOTE_URL")
 	os.Setenv("CONFIG_KEYRING", ".secring.gpg")
@@ -345,6 +404,7 @@ func TestApplication_WatchFile(t *testing.T) {
 		latch := make(chan struct{})
 		app, err := newWithCallback("", func(_ fsnotify.Event) { latch <- struct{}{} })
 		if assert.NoError(t, err) {
+			app.Add(MakeModule(Reload(func(_ Application) error { return errors.New("expected") })))
 			assert.Equal(t, "some value", app.Config().GetString("name"))
 			go func() {
 				<-time.After(1 * time.Second)

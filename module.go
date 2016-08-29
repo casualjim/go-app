@@ -85,7 +85,7 @@ type dynamicModule struct {
 
 func (d *dynamicModule) Init(app Application) error {
 	for _, cb := range d.init {
-		if err := cb(app); err != nil {
+		if err := cb.Call(app); err != nil {
 			return err
 		}
 	}
@@ -94,7 +94,7 @@ func (d *dynamicModule) Init(app Application) error {
 
 func (d *dynamicModule) Start(app Application) error {
 	for _, cb := range d.start {
-		if err := cb(app); err != nil {
+		if err := cb.Call(app); err != nil {
 			return err
 		}
 	}
@@ -103,7 +103,7 @@ func (d *dynamicModule) Start(app Application) error {
 
 func (d *dynamicModule) Stop(app Application) error {
 	for _, cb := range d.stop {
-		if err := cb(app); err != nil {
+		if err := cb.Call(app); err != nil {
 			return err
 		}
 	}
@@ -112,7 +112,7 @@ func (d *dynamicModule) Stop(app Application) error {
 
 func (d *dynamicModule) Reload(app Application) error {
 	for _, cb := range d.reload {
-		if err := cb(app); err != nil {
+		if err := cb.Call(app); err != nil {
 			return err
 		}
 	}

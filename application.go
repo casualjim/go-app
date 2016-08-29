@@ -47,7 +47,7 @@ type Key string
 // Application is an application level context package
 // It can be used as a kind of dependency injection container
 type Application interface {
-	// Add a module to the application context
+	// Add modules to the application context
 	Add(...Module) error
 
 	// Get the module at the specified key, thread-safe
@@ -70,6 +70,15 @@ type Application interface {
 
 	// Info returns the app info object for this application
 	Info() cjm.AppInfo
+
+	// Init the application and its modules with the config.
+	Init() error
+
+	// Start the application an its enabled modules
+	Start() error
+
+	// Stop the application an its enabled modules
+	Stop() error
 }
 
 func createViper(name string) (*viper.Viper, error) {
@@ -161,11 +170,14 @@ func ensureDefaults(name string) (string, string, error) {
 
 	// configure name defaults
 	if name == "" {
-		exe, err := execName()
-		if err != nil {
-			return "", "", err
+		name = os.Getenv("APP_NAME")
+		if name == "" {
+			exe, err := execName()
+			if err != nil {
+				return "", "", err
+			}
+			name = filepath.Base(exe)
 		}
-		name = filepath.Base(exe)
 	}
 
 	return name, version, nil
@@ -208,6 +220,11 @@ func newWithCallback(nme string, reload func(fsnotify.Event)) (Application, erro
 			reload(in)
 		}
 		allLoggers.Reload()
+		for _, mod := range app.modules {
+			if err := mod.Reload(app); err != nil {
+				allLoggers.Root().Errorf("reload config: %v", err)
+			}
+		}
 		allLoggers.Root().Infoln("config file changed:", in.Name)
 	})
 	return app, nil
@@ -304,4 +321,31 @@ func (d *defaultApplication) Config() *viper.Viper {
 
 func (d *defaultApplication) Info() cjm.AppInfo {
 	return d.appInfo
+}
+
+func (d *defaultApplication) Init() error {
+	for _, mod := range d.modules {
+		if err := mod.Init(d); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (d *defaultApplication) Start() error {
+	for _, mod := range d.modules {
+		if err := mod.Start(d); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (d *defaultApplication) Stop() error {
+	for _, mod := range d.modules {
+		if err := mod.Stop(d); err != nil {
+			return err
+		}
+	}
+	return nil
 }
