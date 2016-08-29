@@ -3,8 +3,9 @@ package app
 import (
 	"errors"
 	"fmt"
+	"log"
+	"net/url"
 	"os"
-	"path"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -17,6 +18,9 @@ import (
 	"github.com/fsnotify/fsnotify"
 	"github.com/kardianos/osext"
 	"github.com/spf13/viper"
+
+	// we enable remote config providers by default
+	_ "github.com/spf13/viper/remote"
 )
 
 var (
@@ -32,6 +36,8 @@ var (
 func init() {
 	ErrModuleUnknown = errors.New("unknown module")
 	execName = osext.Executable
+	log.SetOutput(logrus.StandardLogger().Writer())
+	log.SetFlags(0)
 }
 
 // A Module is a component that has a specific lifecycle
@@ -75,27 +81,75 @@ func createViper(name string) (*viper.Viper, error) {
 	v := viper.New()
 	v.SetConfigName("config")
 
-	addViperRemoteConfig(v)
+	if err := addViperRemoteConfig(v); err != nil {
+		return nil, err
+	}
 
-	v.AddConfigPath(path.Join(os.Getenv("HOME"), ".config", strings.ToLower(name)))
-	v.AddConfigPath(path.Join("/etc", strings.ToLower(name)))
-	v.AddConfigPath("etc")
-	v.AddConfigPath(".")
+	norm := strings.ToLower(name)
+	paths := filepath.Join(os.Getenv("HOME"), ".config", norm) + ":" + filepath.Join("/etc", norm) + ":etc:."
+	if os.Getenv("CONFIG_PATH") != "" {
+		paths = os.Getenv("CONFIG_PATH")
+	}
+	for _, path := range filepath.SplitList(paths) {
+		v.AddConfigPath(path)
+	}
 
-	v.SetEnvPrefix(name)
 	if err := v.ReadInConfig(); err != nil {
-		if _, ok := err.(viper.UnsupportedConfigError); !ok {
+		if _, ok := err.(viper.UnsupportedConfigError); !ok && v.ConfigFileUsed() != "" {
 			return nil, err
 		}
 	}
+	v.SetEnvPrefix(name)
 	v.AutomaticEnv()
 
 	addViperDefaults(v)
 	return v, nil
 }
 
-func addViperRemoteConfig(v *viper.Viper) {
+func addViperRemoteConfig(v *viper.Viper) error {
+	// check if encryption is required CONFIG_KEYRING
+	keyring := os.Getenv("CONFIG_KEYRING")
 
+	// check for etcd env vars CONFIG_REMOTE_URL, eg:
+	// etcd://localhost:2379/[app-name]/config.[type]
+	// consul://localhost:8500/[app-name]/config.[type]
+	remURL := os.Getenv("CONFIG_REMOTE_URL")
+	if remURL == "" {
+		return nil
+	}
+	var provider, host, path, tpe string
+	u, err := url.Parse(remURL)
+	if err != nil {
+		return err
+	}
+	provider = strings.ToLower(u.Scheme)
+	host = u.Host
+	if provider == "etcd" {
+		host = "http://" + host
+	}
+	path = u.Path
+	tpe = strings.ToLower(strings.TrimLeft(filepath.Ext(path), "."))
+	if tpe == "" {
+		tpe = "json"
+	}
+
+	v.SetConfigType(tpe)
+	if keyring != "" {
+		if err := v.AddSecureRemoteProvider(provider, host, path, keyring); err != nil {
+			return err
+		}
+	} else {
+
+		if err := v.AddRemoteProvider(provider, host, path); err != nil {
+			return err
+		}
+	}
+
+	if err := v.ReadRemoteConfig(); err != nil {
+		return fmt.Errorf("config is invalid as %s", tpe)
+	}
+
+	return nil
 }
 
 func addViperDefaults(v *viper.Viper) {
@@ -138,28 +192,30 @@ func newWithCallback(nme string, reload func(fsnotify.Event)) (Application, erro
 	if err != nil {
 		return nil, err
 	}
+
 	allLoggers := logging.NewRegistry(cfg, logrus.Fields{"app": appInfo.Name})
 
-	cfg.WatchConfig()
-	cfg.OnConfigChange(func(in fsnotify.Event) {
+	log.SetOutput(allLoggers.Writer())
+
+	tracer := allLoggers.Root().WithField("module", "trace")
+	trace := tracing.New("", tracer, nil)
+
+	app := &defaultApplication{
+		appInfo:    appInfo,
+		allLoggers: allLoggers,
+		rootTracer: trace,
+		config:     cfg,
+		registry:   make(map[ModuleKey]reflect.Value, 100),
+		regLock:    new(sync.Mutex),
+	}
+	app.watchConfigurations(func(in fsnotify.Event) {
 		if reload != nil {
 			reload(in)
 		}
 		allLoggers.Reload()
 		allLoggers.Root().Infoln("config file changed:", in.Name)
 	})
-
-	tracer := allLoggers.Root().WithField("module", "trace")
-	trace := tracing.New("", tracer, nil)
-
-	return &defaultApplication{
-		appInfo:    appInfo,
-		rootLogger: allLoggers.Root(),
-		rootTracer: trace,
-		config:     cfg,
-		registry:   make(map[ModuleKey]reflect.Value, 100),
-		regLock:    new(sync.Mutex),
-	}, nil
+	return app, nil
 }
 
 // New application with the specified name, at the specified basepath
@@ -169,12 +225,32 @@ func New(nme string) (Application, error) {
 
 type defaultApplication struct {
 	appInfo    cjm.AppInfo
+	allLoggers *logging.Registry
 	rootLogger logging.Logger
 	rootTracer tracing.Tracer
 	config     *viper.Viper
 
 	registry map[ModuleKey]reflect.Value
 	regLock  *sync.Mutex
+}
+
+func (d *defaultApplication) watchConfigurations(reload func(fsnotify.Event)) {
+	d.config.WatchConfig()
+	d.config.OnConfigChange(reload)
+
+	// we made it this far, it's clear the url means we're also connecting remotely
+	if os.Getenv("CONFIG_REMOTE_URL") != "" {
+		go func() {
+			for {
+				err := d.config.WatchRemoteConfig()
+				if err != nil {
+					d.Logger().Errorf("watching remote config: %v", err)
+					continue
+				}
+				reload(fsnotify.Event{Name: os.Getenv("CONFIG_REMOTE_URL"), Op: fsnotify.Write})
+			}
+		}()
+	}
 }
 
 // Get the module at the specified key, return a not found error when the module can't be found
@@ -209,11 +285,11 @@ func (d *defaultApplication) Set(key ModuleKey, module interface{}) error {
 }
 
 func (d *defaultApplication) Logger() logrus.FieldLogger {
-	return d.rootLogger
+	return d.allLoggers.Root()
 }
 
 func (d *defaultApplication) NewLogger(name string, ctx logrus.Fields) logrus.FieldLogger {
-	return d.rootLogger.New(name, ctx)
+	return d.allLoggers.Root().New(name, ctx)
 }
 
 func (d *defaultApplication) Tracer() tracing.Tracer {

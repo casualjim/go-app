@@ -108,7 +108,7 @@ type defaultLogger struct {
 
 	config *viper.Viper
 	path   []string
-	reg    *LoggerRegistry
+	reg    *Registry
 }
 
 func (d *defaultLogger) New(name string, fields logrus.Fields) Logger {

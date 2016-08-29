@@ -1,0 +1,11 @@
+%echo Generating a configuration OpenPGP key
+Key-Type: default
+Subkey-Type: default
+Name-Real: go-app.test
+Name-Comment: go-app.test configuration key
+Name-Email: go-app.test@example.com
+Expire-Date: 0
+%pubring .pubring.gpg
+%secring .secring.gpg
+%commit
+%echo done

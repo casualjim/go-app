@@ -1,6 +1,7 @@
 package logging
 
 import (
+	"io"
 	"sort"
 	"strings"
 	"sync"
@@ -28,14 +29,14 @@ func init() {
 }
 
 // LoggerRegistry represents a registry for known loggers
-type LoggerRegistry struct {
+type Registry struct {
 	config *viper.Viper
 	store  map[string]Logger
 	lock   *sync.Mutex
 }
 
 // NewRegistry creates a new logger registry
-func NewRegistry(cfg *viper.Viper, context logrus.Fields) *LoggerRegistry {
+func NewRegistry(cfg *viper.Viper, context logrus.Fields) *Registry {
 	if cfg == nil {
 		cfg = viper.New()
 	}
@@ -53,7 +54,7 @@ func NewRegistry(cfg *viper.Viper, context logrus.Fields) *LoggerRegistry {
 	}
 
 	store := make(map[string]Logger, len(keys))
-	reg := &LoggerRegistry{
+	reg := &Registry{
 		store:  store,
 		config: c,
 		lock:   new(sync.Mutex),
@@ -101,7 +102,7 @@ func NewRegistry(cfg *viper.Viper, context logrus.Fields) *LoggerRegistry {
 
 // Get a logger by name, returns nil when logger doesn't exist.
 // GetOK is the safe method to use.
-func (r *LoggerRegistry) Get(name string) Logger {
+func (r *Registry) Get(name string) Logger {
 	l, ok := r.GetOK(name)
 	if !ok {
 		return nil
@@ -110,7 +111,7 @@ func (r *LoggerRegistry) Get(name string) Logger {
 }
 
 // GetOK a logger by name, boolean is true when a logger was found
-func (r *LoggerRegistry) GetOK(name string) (Logger, bool) {
+func (r *Registry) GetOK(name string) (Logger, bool) {
 	r.lock.Lock()
 	res, ok := r.store[strings.ToLower(name)]
 	r.lock.Unlock()
@@ -118,19 +119,24 @@ func (r *LoggerRegistry) GetOK(name string) (Logger, bool) {
 }
 
 // Register a logger in this registry, overrides existing keys
-func (r *LoggerRegistry) Register(path string, logger Logger) {
+func (r *Registry) Register(path string, logger Logger) {
 	r.lock.Lock()
 	r.store[strings.ToLower(path)] = logger
 	r.lock.Unlock()
 }
 
 // Root returns the root logger, the name is configurable through the RootName variable
-func (r *LoggerRegistry) Root() Logger {
+func (r *Registry) Root() Logger {
 	return r.Get(RootName)
 }
 
+// Writer returns the pipe writer for the root logger
+func (r *Registry) Writer() *io.PipeWriter {
+	return r.Root().(*defaultLogger).Logger.Writer()
+}
+
 // Reload all the loggers with the new config
-func (r *LoggerRegistry) Reload() {
+func (r *Registry) Reload() {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 

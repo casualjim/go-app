@@ -161,6 +161,7 @@ func TestLogging_Registry_Root(t *testing.T) {
 			assert.IsType(t, &logrus.JSONFormatter{}, l.Logger.Formatter)
 			assert.Equal(t, logrus.Fields{"module": "root", "some": "field"}, l.Data)
 		}
+		assert.NotNil(t, r1.Writer())
 	}
 }
 

@@ -6,18 +6,26 @@ clone:
 compose:
   consul:
     image: consul
-
+  etcd:
+    image: quay.io/coreos/etcd
+ 
 build:
   compile:
     image: golang:1.7
     pull: true
     commands:
       - apt-get update -yqq
-      - apt-get install -yqq rsyslog
+      # installing and running haveged so builds don't take forever
+      - apt-get install -yqq haveged
+      - haveged --run 0
+      - apt-get install -yqq rsyslog gnupg2
       - rsyslogd
+      - gpg2 --batch --armor --gen-key hack/app.batch
       - go get -u github.com/axw/gocov/gocov
       - go get -u gopkg.in/matm/v1/gocov-html
       - go get -u github.com/cee-dub/go-junit-report
+      - go get -u github.com/coreos/etcd/etcdctl
+      - go get -u github.com/xordataexchange/crypt/bin/crypt
       - go get -t ./...
       - go test -race ./...
       - go test -cover -covermode=atomic -coverprofile=profile.out .

@@ -4,47 +4,325 @@ import (
 	"errors"
 	"io/ioutil"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/Sirupsen/logrus"
 	"github.com/casualjim/go-app/logging"
 	"github.com/fsnotify/fsnotify"
+	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
+	"github.com/xordataexchange/crypt/backend/consul"
+	"github.com/xordataexchange/crypt/backend/etcd"
+	"github.com/xordataexchange/crypt/encoding/secconf"
 )
 
-func TestApplication_Constructor(t *testing.T) {
-	appi, _ := New("")
-	app := appi.(*defaultApplication)
+const (
+	conjson = `{
+  "name": "go-app.test",
+  "location": "a wonderful, magical place among the stars",
+  "count": 1
+}`
+	conjson2 = `{
+  "name": "go-app.test",
+  "location": "a wonderful, magical place among the stars",
+  "count": 3
+}`
+)
 
-	if assert.NotNil(t, app.appInfo) {
-		info := app.appInfo
-		assert.NotEmpty(t, info.Version)
-		assert.Equal(t, "dev", info.Version)
-		assert.NotEmpty(t, info.Name)
-		assert.Equal(t, "go-app.test", info.Name)
-		assert.Equal(t, "/", info.BasePath)
+func TestApplication_RemoteErrors(t *testing.T) {
+	defer os.Unsetenv("CONFIG_REMOTE_URL")
+	defer os.Unsetenv("CONFIG_KEYRING")
+
+	// invalid url
+	os.Setenv("CONFIG_REMOTE_URL", "etcd://[/")
+	_, err := New("")
+	assert.Error(t, err)
+
+	// invalid scheme
+	os.Setenv("CONFIG_REMOTE_URL", "zookeeper://127.0.0.1:2379/etcdenc/config.json")
+	assert.EqualError(t, addViperRemoteConfig(viper.New()), "Unsupported Remote Provider Type \"zookeeper\"")
+	os.Setenv("CONFIG_KEYRING", ".pubring.gpg")
+	assert.EqualError(t, addViperRemoteConfig(viper.New()), "Unsupported Remote Provider Type \"zookeeper\"")
+
+	// invalid type
+	os.Setenv("CONFIG_REMOTE_URL", "etcd://127.0.0.1:2379/etcdenc/config.unknown")
+	assert.EqualError(t, addViperRemoteConfig(viper.New()), "config is invalid as unknown")
+}
+
+func encrypt(d []byte) ([]byte, error) {
+	kr, err := os.Open(".secring.gpg")
+	if err != nil {
+		return nil, err
+	}
+	defer kr.Close()
+
+	return secconf.Encode(d, kr)
+}
+
+func TestApplication_EtcdEncrypted(t *testing.T) {
+	defer os.Unsetenv("CONFIG_KEYRING")
+	defer os.Unsetenv("CONFIG_REMOTE_URL")
+	os.Setenv("CONFIG_KEYRING", ".secring.gpg")
+	os.Setenv("CONFIG_REMOTE_URL", "etcd://127.0.0.1:2379/etcdenc/config.json")
+
+	etcdc, err := etcd.New([]string{"http://127.0.0.1:2379"})
+	if assert.NoError(t, err) {
+		encrypted, err := encrypt([]byte(conjson))
+		if assert.NoError(t, err) {
+			if assert.NoError(t, etcdc.Set("/etcdenc/config.json", encrypted)) {
+				b, err := etcdc.Get("/etcdenc/config.json")
+				if assert.NoError(t, err) {
+					assert.Equal(t, string(encrypted), string(b))
+
+					v := viper.New()
+					if assert.NoError(t, addViperRemoteConfig(v)) {
+						assert.Equal(t, "go-app.test", v.GetString("name"))
+						assert.Equal(t, "a wonderful, magical place among the stars", v.Get("location"))
+						assert.Equal(t, 1, v.GetInt("count"))
+					}
+				}
+			}
+		}
+	}
+}
+
+func TestApplication_EtcdUnencrypted(t *testing.T) {
+	defer os.Unsetenv("CONFIG_REMOTE_URL")
+	os.Unsetenv("CONFIG_KEYRING")
+	os.Setenv("CONFIG_REMOTE_URL", "etcd://127.0.0.1:2379/etcdplain/config.json")
+
+	etcdc, err := etcd.New([]string{"http://127.0.0.1:2379"})
+	if assert.NoError(t, err) {
+		if assert.NoError(t, etcdc.Set("/etcdplain/config.json", []byte(conjson))) {
+			b, err := etcdc.Get("/etcdplain/config.json")
+			if assert.NoError(t, err) {
+				assert.Equal(t, conjson, string(b))
+
+				v := viper.New()
+				if assert.NoError(t, addViperRemoteConfig(v)) {
+					assert.Equal(t, "go-app.test", v.GetString("name"))
+					assert.Equal(t, "a wonderful, magical place among the stars", v.Get("location"))
+					assert.Equal(t, 1, v.GetInt("count"))
+				}
+			}
+		}
+
+		os.Setenv("CONFIG_REMOTE_URL", "etcd://127.0.0.1:2379/etcdplain/config")
+		if assert.NoError(t, etcdc.Set("/etcdplain/config", []byte(conjson))) {
+			b, err := etcdc.Get("/etcdplain/config")
+			if assert.NoError(t, err) {
+				assert.Equal(t, conjson, string(b))
+
+				v := viper.New()
+				if assert.NoError(t, addViperRemoteConfig(v)) {
+					assert.Equal(t, "go-app.test", v.GetString("name"))
+					assert.Equal(t, "a wonderful, magical place among the stars", v.Get("location"))
+					assert.Equal(t, 1, v.GetInt("count"))
+				}
+			}
+		}
+	}
+}
+
+func TestApplication_WatchEtcd(t *testing.T) {
+	defer os.Unsetenv("CONFIG_KEYRING")
+	defer os.Unsetenv("CONFIG_REMOTE_URL")
+	os.Setenv("CONFIG_KEYRING", ".secring.gpg")
+	os.Setenv("CONFIG_REMOTE_URL", "etcd://127.0.0.1:2379/etcdenc/config.json")
+
+	etcdc, err := etcd.New([]string{"http://127.0.0.1:2379"})
+	if assert.NoError(t, err) {
+		encrypted, err := encrypt([]byte(conjson))
+		if assert.NoError(t, err) {
+			if assert.NoError(t, etcdc.Set("/etcdenc/config.json", encrypted)) {
+				b, err := etcdc.Get("/etcdenc/config.json")
+				if assert.NoError(t, err) {
+					assert.Equal(t, string(encrypted), string(b))
+
+					latch := make(chan struct{})
+					app, err := newWithCallback("", func(_ fsnotify.Event) { latch <- struct{}{} })
+					if assert.NoError(t, err) {
+						v := app.Config()
+						assert.Equal(t, "go-app.test", v.GetString("name"))
+						assert.Equal(t, "a wonderful, magical place among the stars", v.Get("location"))
+						assert.Equal(t, 1, v.GetInt("count"))
+						encrypted2, err := encrypt([]byte(conjson2))
+
+						if assert.NoError(t, err) {
+							go func() {
+								<-time.After(1 * time.Second)
+								err = etcdc.Set("/etcdenc/config.json", encrypted2)
+								if err != nil {
+									t.Log(err)
+								}
+							}()
+
+							select {
+							case <-latch:
+								b, err := etcdc.Get("/etcdenc/config.json")
+								if assert.NoError(t, err) {
+									assert.Equal(t, string(encrypted2), string(b))
+
+									assert.Equal(t, "go-app.test", v.GetString("name"))
+									assert.Equal(t, "a wonderful, magical place among the stars", v.Get("location"))
+									assert.Equal(t, 3, v.GetInt("count"))
+								}
+							case <-time.After(10 * time.Second):
+								t.Error("watch timed out")
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+func TestApplication_ConsulEncrypted(t *testing.T) {
+	defer os.Unsetenv("CONFIG_KEYRING")
+	defer os.Unsetenv("CONFIG_REMOTE_URL")
+	os.Setenv("CONFIG_KEYRING", ".secring.gpg")
+	os.Setenv("CONFIG_REMOTE_URL", "consul://127.0.0.1:8500/consulenc/config.json")
+
+	consulc, err := consul.New([]string{"127.0.0.1:8500"})
+	if assert.NoError(t, err) {
+		encrypted, err := encrypt([]byte(conjson))
+		if assert.NoError(t, err) {
+			if assert.NoError(t, consulc.Set("/consulenc/config.json", encrypted)) {
+				b, err := consulc.Get("/consulenc/config.json")
+				if assert.NoError(t, err) {
+					assert.Equal(t, string(encrypted), string(b))
+
+					v := viper.New()
+					if assert.NoError(t, addViperRemoteConfig(v)) {
+						assert.Equal(t, "go-app.test", v.GetString("name"))
+						assert.Equal(t, "a wonderful, magical place among the stars", v.Get("location"))
+						assert.Equal(t, 1, v.GetInt("count"))
+					}
+				}
+			}
+		}
+	}
+
+}
+
+func TestApplication_ConsulUnencrypted(t *testing.T) {
+	defer os.Unsetenv("CONFIG_REMOTE_URL")
+	os.Unsetenv("CONFIG_KEYRING")
+	os.Setenv("CONFIG_REMOTE_URL", "consul://127.0.0.1:8500/consulplain/config.json")
+
+	consulc, err := consul.New([]string{"127.0.0.1:8500"})
+	if assert.NoError(t, err) {
+		if assert.NoError(t, consulc.Set("/consulplain/config.json", []byte(conjson))) {
+			b, err := consulc.Get("/consulplain/config.json")
+			if assert.NoError(t, err) {
+				assert.Equal(t, conjson, string(b))
+
+				v := viper.New()
+				if assert.NoError(t, addViperRemoteConfig(v)) {
+					assert.Equal(t, "go-app.test", v.GetString("name"))
+					assert.Equal(t, "a wonderful, magical place among the stars", v.Get("location"))
+					assert.Equal(t, 1, v.GetInt("count"))
+				}
+			}
+		}
+	}
+}
+
+func TestApplication_WatchConsul(t *testing.T) {
+	t.Skip("until fixed")
+	defer os.Unsetenv("CONFIG_KEYRING")
+	defer os.Unsetenv("CONFIG_REMOTE_URL")
+	os.Setenv("CONFIG_KEYRING", ".secring.gpg")
+	os.Setenv("CONFIG_REMOTE_URL", "consul://127.0.0.1:8500/consulenc/config.json")
+
+	consulc, err := consul.New([]string{"127.0.0.1:8500"})
+	if assert.NoError(t, err) {
+		encrypted, err := encrypt([]byte(conjson))
+		if assert.NoError(t, err) {
+			if assert.NoError(t, consulc.Set("/consulenc/config.json", encrypted)) {
+				b, err := consulc.Get("/consulenc/config.json")
+				if assert.NoError(t, err) {
+					assert.Equal(t, string(encrypted), string(b))
+
+					latch := make(chan struct{})
+					app, err := newWithCallback("", func(_ fsnotify.Event) { latch <- struct{}{} })
+					if assert.NoError(t, err) {
+						v := app.Config()
+						assert.Equal(t, "go-app.test", v.GetString("name"))
+						assert.Equal(t, "a wonderful, magical place among the stars", v.Get("location"))
+						assert.Equal(t, 1, v.GetInt("count"))
+
+						encrypted2, err := encrypt([]byte(conjson2))
+						if assert.NoError(t, err) {
+							go func() {
+								<-time.After(1 * time.Second)
+								err = consulc.Set("/consulenc/config.json", encrypted2)
+								if err != nil {
+									t.Log(err)
+								}
+							}()
+
+							select {
+							case <-latch:
+								b, err := consulc.Get("/consulenc/config.json")
+								if assert.NoError(t, err) {
+									assert.Equal(t, string(encrypted2), string(b))
+
+									assert.Equal(t, "go-app.test", v.GetString("name"))
+									assert.Equal(t, "a wonderful, magical place among the stars", v.Get("location"))
+									assert.Equal(t, 3, v.GetInt("count"))
+								}
+							case <-time.After(10 * time.Second):
+								t.Error("watch timed out")
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+func TestApplication_Constructor(t *testing.T) {
+	appi, err := New("")
+	if assert.NoError(t, err) {
+		app := appi.(*defaultApplication)
+
+		if assert.NotNil(t, app.appInfo) {
+			info := app.appInfo
+			assert.NotEmpty(t, info.Version)
+			assert.Equal(t, "dev", info.Version)
+			assert.NotEmpty(t, info.Name)
+			assert.Equal(t, "go-app.test", info.Name)
+			assert.Equal(t, "/", info.BasePath)
+		}
+
+		assert.NotNil(t, app.Logger())
+		assert.NotNil(t, app.Tracer())
+		assert.NotNil(t, app.Config())
+		assert.NotNil(t, app.registry)
+		assert.NotNil(t, app.regLock)
+
 	}
 
 	Version = "0.1.0"
-	appi2, _ := New("the-app")
-	app2 := appi2.(*defaultApplication)
-	Version = ""
+	appi2, err := New("the-app")
+	if assert.NoError(t, err) {
+		app2 := appi2.(*defaultApplication)
+		Version = ""
 
-	if assert.NotNil(t, app2.appInfo) {
-		info := app2.appInfo
-		assert.NotEmpty(t, info.Version)
-		assert.Equal(t, "0.1.0", info.Version)
-		assert.NotEmpty(t, info.Name)
-		assert.Equal(t, "the-app", info.Name)
-		assert.Equal(t, "/", info.BasePath)
+		if assert.NotNil(t, app2.appInfo) {
+			info := app2.appInfo
+			assert.NotEmpty(t, info.Version)
+			assert.Equal(t, "0.1.0", info.Version)
+			assert.NotEmpty(t, info.Name)
+			assert.Equal(t, "the-app", info.Name)
+			assert.Equal(t, "/", info.BasePath)
+		}
 	}
-
-	assert.NotNil(t, app.rootLogger)
-	assert.NotNil(t, app.Tracer())
-	assert.NotNil(t, app.Config())
-	assert.NotNil(t, app.registry)
-	assert.NotNil(t, app.regLock)
 }
 
 func TestApplication_InvalidConfigFile(t *testing.T) {
@@ -77,6 +355,44 @@ func TestApplication_WatchFile(t *testing.T) {
 			}()
 			<-latch
 			assert.Equal(t, "other value", app.Config().GetString("name"))
+		}
+	}
+}
+
+func TestApplication_EnvConfigPath(t *testing.T) {
+	oldCP := os.Getenv("CONFIG_PATH")
+	defer os.Setenv("CONFIG_PATH", oldCP)
+
+	dir, err := ioutil.TempDir("", "go-app")
+	if assert.NoError(t, err) {
+		cpath := filepath.Join(dir, "configs")
+		tpar := filepath.Join(os.TempDir(), "configs")
+		os.Setenv("CONFIG_PATH", tpar+":"+cpath)
+
+		// save in last dir
+		if assert.NoError(t, os.MkdirAll(cpath, 0755)) {
+			defer os.RemoveAll(cpath)
+			fpath := filepath.Join(cpath, "config.json")
+			content := []byte(`{"name":"some-config"}`)
+			if assert.NoError(t, ioutil.WriteFile(fpath, content, 0644)) {
+				v, err := createViper("test3")
+				if assert.NoError(t, err) {
+					assert.Equal(t, "some-config", v.GetString("name"))
+				}
+			}
+		}
+
+		// save in first dir
+		if assert.NoError(t, os.MkdirAll(tpar, 0755)) {
+			defer os.RemoveAll(tpar)
+			fpath := filepath.Join(tpar, "config.json")
+			content := []byte(`{"name":"other-config"}`)
+			if assert.NoError(t, ioutil.WriteFile(fpath, content, 0644)) {
+				v, err := createViper("test4")
+				if assert.NoError(t, err) {
+					assert.Equal(t, "other-config", v.GetString("name"))
+				}
+			}
 		}
 	}
 }
