@@ -129,7 +129,7 @@ func (o *ordersService) Create(o *Order) error {
 
 In the main package you would then write a main function that could look like this:
 
-```
+```go
 func main() {
   app := app.New("")
   app.Add(orders.Module)
