@@ -484,21 +484,16 @@ func TestApplication_GetModule(t *testing.T) {
 
 	var fm2 firstModule
 	fm2.arb = "second"
-	if assert.NoError(t, app.Get(firstModuleKey, &fm2)) {
+	iface, ok := app.Get(firstModuleKey)
+	if assert.True(t, ok) {
+		fm2 := iface.(*firstModule)
 		assert.Equal(t, orig, fm2.arb)
 		assert.Equal(t, fm.arb, fm2.arb)
 	}
 
-	var fm3 firstModule
-	assert.EqualError(t, app.Get(Key(300), &fm3), ErrModuleUnknown.Error())
-
-	var om otherModule
-	err := app.Get(firstModuleKey, &om)
-	assert.EqualError(t, err, "can't assign app.firstModule to app.otherModule")
-
-	var np someModule
-	err2 := app.Get(someModuleKey, np)
-	assert.EqualError(t, err2, "expected module app.someModule to be a pointer")
+	fm3, ok := app.Get(Key("300"))
+	assert.False(t, ok)
+	assert.Nil(t, fm3)
 }
 
 func TestApplication_SetModule(t *testing.T) {

@@ -20,7 +20,7 @@ build:
       - haveged --run 0
       - apt-get install -yqq rsyslog gnupg2
       - rsyslogd
-      - gpg2 --batch --armor --gen-key hack/app.batch
+      - gpg2 --homedir .  --batch --armor --gen-key hack/app.batch
       - go get -u github.com/axw/gocov/gocov
       - go get -u gopkg.in/matm/v1/gocov-html
       - go get -u github.com/cee-dub/go-junit-report

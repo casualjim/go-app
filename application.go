@@ -7,7 +7,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"sync"
 
@@ -51,7 +50,7 @@ type Application interface {
 	Add(...Module) error
 
 	// Get the module at the specified key, thread-safe
-	Get(Key, interface{}) error
+	Get(Key) (interface{}, bool)
 
 	// Set the module at the specified key, this should be safe across multiple threads
 	Set(Key, interface{}) error
@@ -212,7 +211,7 @@ func newWithCallback(nme string, reload func(fsnotify.Event)) (Application, erro
 		allLoggers: allLoggers,
 		rootTracer: trace,
 		config:     cfg,
-		registry:   make(map[Key]reflect.Value, 100),
+		registry:   make(map[Key]interface{}, 100),
 		regLock:    new(sync.Mutex),
 	}
 	app.watchConfigurations(func(in fsnotify.Event) {
@@ -242,7 +241,7 @@ type defaultApplication struct {
 	config     *viper.Viper
 	modules    []Module
 
-	registry map[Key]reflect.Value
+	registry map[Key]interface{}
 	regLock  *sync.Mutex
 }
 
@@ -272,33 +271,21 @@ func (d *defaultApplication) Add(modules ...Module) error {
 	return nil
 }
 
-// Get the module at the specified key, return a not found error when the module can't be found
-func (d *defaultApplication) Get(key Key, module interface{}) error {
-	mv := reflect.ValueOf(module)
-	if mv.Kind() != reflect.Ptr {
-		return fmt.Errorf("expected module %T to be a pointer", module)
-	}
-
+// Get the module at the specified key, return false when the component doesn't exist
+func (d *defaultApplication) Get(key Key) (interface{}, bool) {
 	d.regLock.Lock()
 	defer d.regLock.Unlock()
 
 	mod, ok := d.registry[key]
 	if !ok {
-		return ErrModuleUnknown
+		return nil, ok
 	}
-
-	av := reflect.Indirect(mv)
-	if !mod.Type().AssignableTo(av.Type()) {
-		return fmt.Errorf("can't assign %T to %T", mod.Interface(), av.Interface())
-	}
-
-	av.Set(mod)
-	return nil
+	return mod, ok
 }
 
 func (d *defaultApplication) Set(key Key, module interface{}) error {
 	d.regLock.Lock()
-	d.registry[key] = reflect.Indirect(reflect.ValueOf(module))
+	d.registry[key] = module
 	d.regLock.Unlock()
 	return nil
 }
