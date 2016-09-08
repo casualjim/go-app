@@ -67,6 +67,9 @@ func encrypt(d []byte) ([]byte, error) {
 }
 
 func TestApplication_EtcdEncrypted(t *testing.T) {
+	if _, err := os.Stat(".secring.gpg"); os.IsNotExist(err) {
+		t.Skip("skipping, no keyring.")
+	}
 	defer os.Unsetenv("CONFIG_KEYRING")
 	defer os.Unsetenv("CONFIG_REMOTE_URL")
 	os.Setenv("CONFIG_KEYRING", ".secring.gpg")
@@ -100,7 +103,10 @@ func TestApplication_EtcdUnencrypted(t *testing.T) {
 
 	etcdc, err := etcd.New([]string{"http://127.0.0.1:2379"})
 	if assert.NoError(t, err) {
-		if assert.NoError(t, etcdc.Set("/etcdplain/config.json", []byte(conjson))) {
+		err = etcdc.Set("/etcdplain/config.json", []byte(conjson))
+		if err != nil {
+			t.Skip("skipping, no etcd.")
+		} else {
 			b, err := etcdc.Get("/etcdplain/config.json")
 			if assert.NoError(t, err) {
 				assert.Equal(t, conjson, string(b))
@@ -132,6 +138,9 @@ func TestApplication_EtcdUnencrypted(t *testing.T) {
 }
 
 func TestApplication_WatchEtcd(t *testing.T) {
+	if _, err := os.Stat(".secring.gpg"); os.IsNotExist(err) {
+		t.Skip("skipping, no keyring.")
+	}
 	defer os.Unsetenv("CONFIG_KEYRING")
 	defer os.Unsetenv("CONFIG_REMOTE_URL")
 	os.Setenv("CONFIG_KEYRING", ".secring.gpg")
@@ -147,7 +156,7 @@ func TestApplication_WatchEtcd(t *testing.T) {
 					assert.Equal(t, string(encrypted), string(b))
 
 					latch := make(chan struct{})
-					app, err := newWithCallback("", func(_ fsnotify.Event) { latch <- struct{}{} })
+					app, err := newWithCallback("", "", func(_ fsnotify.Event) { latch <- struct{}{} })
 					if assert.NoError(t, err) {
 						v := app.Config()
 						assert.Equal(t, "go-app.test", v.GetString("name"))
@@ -186,6 +195,9 @@ func TestApplication_WatchEtcd(t *testing.T) {
 }
 
 func TestApplication_WatchEtcdError(t *testing.T) {
+	if _, err := os.Stat(".secring.gpg"); os.IsNotExist(err) {
+		t.Skip("skipping, no keyring.")
+	}
 	defer os.Unsetenv("CONFIG_KEYRING")
 	defer os.Unsetenv("CONFIG_REMOTE_URL")
 	os.Setenv("CONFIG_KEYRING", ".secring.gpg")
@@ -201,7 +213,7 @@ func TestApplication_WatchEtcdError(t *testing.T) {
 					assert.Equal(t, string(encrypted), string(b))
 
 					latch := make(chan struct{})
-					app, err := newWithCallback("", func(_ fsnotify.Event) { latch <- struct{}{} })
+					app, err := newWithCallback("", "", func(_ fsnotify.Event) { latch <- struct{}{} })
 					if assert.NoError(t, err) {
 						v := app.Config()
 						assert.Equal(t, "go-app.test", v.GetString("name"))
@@ -240,6 +252,9 @@ func TestApplication_WatchEtcdError(t *testing.T) {
 }
 
 func TestApplication_ConsulEncrypted(t *testing.T) {
+	if _, err := os.Stat(".secring.gpg"); os.IsNotExist(err) {
+		t.Skip("skipping, no keyring.")
+	}
 	defer os.Unsetenv("CONFIG_KEYRING")
 	defer os.Unsetenv("CONFIG_REMOTE_URL")
 	os.Setenv("CONFIG_KEYRING", ".secring.gpg")
@@ -274,7 +289,10 @@ func TestApplication_ConsulUnencrypted(t *testing.T) {
 
 	consulc, err := consul.New([]string{"127.0.0.1:8500"})
 	if assert.NoError(t, err) {
-		if assert.NoError(t, consulc.Set("/consulplain/config.json", []byte(conjson))) {
+		err = consulc.Set("/consulplain/config.json", []byte(conjson))
+		if err != nil {
+			t.Skip("skipping, no consul.")
+		} else {
 			b, err := consulc.Get("/consulplain/config.json")
 			if assert.NoError(t, err) {
 				assert.Equal(t, conjson, string(b))
@@ -307,7 +325,7 @@ func TestApplication_WatchConsul(t *testing.T) {
 					assert.Equal(t, string(encrypted), string(b))
 
 					latch := make(chan struct{})
-					app, err := newWithCallback("", func(_ fsnotify.Event) { latch <- struct{}{} })
+					app, err := newWithCallback("", "", func(_ fsnotify.Event) { latch <- struct{}{} })
 					if assert.NoError(t, err) {
 						v := app.Config()
 						assert.Equal(t, "go-app.test", v.GetString("name"))
@@ -402,7 +420,7 @@ func TestApplication_WatchFile(t *testing.T) {
 
 	if assert.NoError(t, err) {
 		latch := make(chan struct{})
-		app, err := newWithCallback("", func(_ fsnotify.Event) { latch <- struct{}{} })
+		app, err := newWithCallback("", "", func(_ fsnotify.Event) { latch <- struct{}{} })
 		if assert.NoError(t, err) {
 			app.Add(MakeModule(Reload(func(_ Application) error { return errors.New("expected") })))
 			assert.Equal(t, "some value", app.Config().GetString("name"))
@@ -435,7 +453,7 @@ func TestApplication_EnvConfigPath(t *testing.T) {
 			fpath := filepath.Join(cpath, "config.json")
 			content := []byte(`{"name":"some-config"}`)
 			if assert.NoError(t, ioutil.WriteFile(fpath, content, 0644)) {
-				v, err := createViper("test3")
+				v, err := createViper("test3", "")
 				if assert.NoError(t, err) {
 					assert.Equal(t, "some-config", v.GetString("name"))
 				}
@@ -448,11 +466,63 @@ func TestApplication_EnvConfigPath(t *testing.T) {
 			fpath := filepath.Join(tpar, "config.json")
 			content := []byte(`{"name":"other-config"}`)
 			if assert.NoError(t, ioutil.WriteFile(fpath, content, 0644)) {
-				v, err := createViper("test4")
+				v, err := createViper("test4", "")
 				if assert.NoError(t, err) {
 					assert.Equal(t, "other-config", v.GetString("name"))
 				}
 			}
+		}
+	}
+}
+
+func TestApplication_ConstructorWithConfig(t *testing.T) {
+	dir, err := ioutil.TempDir("", "go-app")
+	if assert.NoError(t, err) {
+		fpath := filepath.Join(dir, "myconfig.json")
+		content := []byte(`{"name":"other-config"}`)
+		if assert.NoError(t, ioutil.WriteFile(fpath, content, 0644)) {
+			appi, err := NewWithConfig("", fpath)
+			if assert.NoError(t, err) {
+				app := appi.(*defaultApplication)
+				v := app.Config()
+				assert.Equal(t, "other-config", v.GetString("name"))
+			}
+		}
+		// should work with or without file extension
+		fpath = filepath.Join(dir, "myconfig")
+		content = []byte(`{"name":"other-config"}`)
+		if assert.NoError(t, ioutil.WriteFile(fpath, content, 0644)) {
+			appi, err := NewWithConfig("", fpath)
+			if assert.NoError(t, err) {
+				app := appi.(*defaultApplication)
+				v := app.Config()
+				assert.Equal(t, "other-config", v.GetString("name"))
+			}
+		}
+	}
+}
+
+func TestApplication_ConstructorWithInvalidConfig(t *testing.T) {
+	_, err := NewWithConfig("", "/some/nonexistent/path.json")
+	assert.Error(t, err)
+	dir, err := ioutil.TempDir("", "go-app")
+	if assert.NoError(t, err) {
+		fpath := filepath.Join(dir, "myconfig.json")
+		content := []byte(`{"name":"other-config"}`)
+		if assert.NoError(t, ioutil.WriteFile(fpath, content, 0644)) {
+			appi, err := NewWithConfig("", fpath)
+			if assert.NoError(t, err) {
+				app := appi.(*defaultApplication)
+				v := app.Config()
+				assert.Equal(t, "other-config", v.GetString("name"))
+			}
+		}
+		// invalid json
+		fpath = filepath.Join(dir, "myconfig.json")
+		content = []byte(`{name:"other-config"}`)
+		if assert.NoError(t, ioutil.WriteFile(fpath, content, 0644)) {
+			_, err = NewWithConfig("", fpath)
+			assert.Error(t, err)
 		}
 	}
 }

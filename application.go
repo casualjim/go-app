@@ -80,14 +80,8 @@ type Application interface {
 	Stop() error
 }
 
-func createViper(name string) (*viper.Viper, error) {
-	v := viper.New()
+func addDefaultConfigPaths(v *viper.Viper, name string) {
 	v.SetConfigName("config")
-
-	if err := addViperRemoteConfig(v); err != nil {
-		return nil, err
-	}
-
 	norm := strings.ToLower(name)
 	paths := filepath.Join(os.Getenv("HOME"), ".config", norm) + ":" + filepath.Join("/etc", norm) + ":etc:."
 	if os.Getenv("CONFIG_PATH") != "" {
@@ -95,6 +89,32 @@ func createViper(name string) (*viper.Viper, error) {
 	}
 	for _, path := range filepath.SplitList(paths) {
 		v.AddConfigPath(path)
+	}
+}
+
+func createViper(name string, configPath string) (*viper.Viper, error) {
+	v := viper.New()
+	if configPath == "" {
+		addDefaultConfigPaths(v, name)
+	} else {
+		if _, err := os.Stat(configPath); os.IsNotExist(err) {
+			return nil, fmt.Errorf("No config file found at %s", configPath)
+		}
+		dir, fname := filepath.Split(configPath)
+		// viper wants the file name without extention...
+		suffixes := []string{".json", ".yml", ".yaml", ".hcl", ".toml"}
+		for _, suffix := range suffixes {
+			if strings.HasSuffix(fname, suffix) {
+				fname = strings.Split(fname, suffix)[0]
+				break
+			}
+		}
+		v.SetConfigName(fname)
+		v.AddConfigPath(dir)
+	}
+
+	if err := addViperRemoteConfig(v); err != nil {
+		return nil, err
 	}
 
 	if err := v.ReadInConfig(); err != nil {
@@ -182,7 +202,7 @@ func ensureDefaults(name string) (string, string, error) {
 	return name, version, nil
 }
 
-func newWithCallback(nme string, reload func(fsnotify.Event)) (Application, error) {
+func newWithCallback(nme string, configPath string, reload func(fsnotify.Event)) (Application, error) {
 	name, version, err := ensureDefaults(nme)
 	if err != nil {
 		return nil, err
@@ -194,7 +214,7 @@ func newWithCallback(nme string, reload func(fsnotify.Event)) (Application, erro
 		Pid:      os.Getpid(),
 	}
 
-	cfg, err := createViper(name)
+	cfg, err := createViper(name, configPath)
 	if err != nil {
 		return nil, err
 	}
@@ -231,7 +251,12 @@ func newWithCallback(nme string, reload func(fsnotify.Event)) (Application, erro
 
 // New application with the specified name, at the specified basepath
 func New(nme string) (Application, error) {
-	return newWithCallback(nme, nil)
+	return newWithCallback(nme, "", nil)
+}
+
+// NewWithConfig application with the specified name, with a specific config file path
+func NewWithConfig(nme string, configPath string) (Application, error) {
+	return newWithCallback(nme, configPath, nil)
 }
 
 type defaultApplication struct {
