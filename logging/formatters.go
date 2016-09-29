@@ -22,7 +22,7 @@ var (
 
 func init() {
 	formattersLock = new(sync.Mutex)
-
+	formattersLock.Lock()
 	DefaultFormatter = func(c *viper.Viper) logrus.Formatter {
 		return &logrus.TextFormatter{}
 	}
@@ -34,6 +34,7 @@ func init() {
 	knownFormatters["text"] = func(c *viper.Viper) logrus.Formatter {
 		return &logrus.TextFormatter{}
 	}
+	formattersLock.Unlock()
 }
 
 func parseFormatter(fmtr string, v *viper.Viper) logrus.Formatter {

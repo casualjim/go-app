@@ -54,7 +54,8 @@ func mergeFields(child, parent logrus.Fields) logrus.Fields {
 var loggerLock = new(sync.Mutex)
 
 func configureLogger(logger *logrus.Logger, fields logrus.Fields, cfg *viper.Viper) {
-
+	loggerLock.Lock()
+	defer loggerLock.Unlock()
 	logger.Level = parseLevel(cfg.GetString("level"))
 	logger.Formatter = parseFormatter(cfg.GetString("format"), cfg)
 
@@ -79,8 +80,7 @@ func configureLogger(logger *logrus.Logger, fields logrus.Fields, cfg *viper.Vip
 }
 
 func newNamedLogger(name string, fields logrus.Fields, cfg *viper.Viper, parent *defaultLogger) *defaultLogger {
-	loggerLock.Lock()
-	defer loggerLock.Unlock()
+
 	logger := logrus.New()
 
 	configureLogger(logger, fields, cfg)
