@@ -95,7 +95,15 @@ func addDefaultConfigPaths(v *viper.Viper, name string) {
 	}
 }
 
+var viperLock *sync.Mutex
+
+func init() {
+	viperLock = new(sync.Mutex)
+}
+
 func createViper(name string, configPath string) (*viper.Viper, error) {
+	viperLock.Lock()
+	defer viperLock.Unlock()
 	v := viper.New()
 	if configPath == "" {
 		addDefaultConfigPaths(v, name)
@@ -129,6 +137,7 @@ func createViper(name string, configPath string) (*viper.Viper, error) {
 	v.AutomaticEnv()
 
 	addViperDefaults(v)
+
 	return v, nil
 }
 
@@ -274,6 +283,8 @@ type defaultApplication struct {
 }
 
 func (d *defaultApplication) watchConfigurations(reload func(fsnotify.Event)) {
+	viperLock.Lock()
+	defer viperLock.Unlock()
 	d.config.WatchConfig()
 	d.config.OnConfigChange(reload)
 
