@@ -50,7 +50,10 @@ type Application interface {
 	Add(...Module) error
 
 	// Get the module at the specified key, thread-safe
-	Get(Key) (interface{}, bool)
+	Get(Key) interface{}
+
+	// Get the module at the specified key, thread-safe
+	GetOK(Key) (interface{}, bool)
 
 	// Set the module at the specified key, this should be safe across multiple threads
 	Set(Key, interface{}) error
@@ -296,8 +299,14 @@ func (d *defaultApplication) Add(modules ...Module) error {
 	return nil
 }
 
+// Get the module at the specified key, return nil when the component doesn't exist
+func (d *defaultApplication) Get(key Key) interface{} {
+	mod, _ := d.GetOK(key)
+	return mod
+}
+
 // Get the module at the specified key, return false when the component doesn't exist
-func (d *defaultApplication) Get(key Key) (interface{}, bool) {
+func (d *defaultApplication) GetOK(key Key) (interface{}, bool) {
 	d.regLock.Lock()
 	defer d.regLock.Unlock()
 

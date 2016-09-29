@@ -544,6 +544,28 @@ func TestApplication_ExeNameFallback(t *testing.T) {
 	assert.EqualError(t, err, "expected")
 }
 
+func TestApplication_GetOKModule(t *testing.T) {
+	app, _ := New("GetOKModuleTest")
+	const orig = "original"
+
+	fm := new(firstModule)
+	fm.arb = orig
+	fm.Init(app)
+
+	var fm2 firstModule
+	fm2.arb = "second"
+	iface, ok := app.GetOK(firstModuleKey)
+	if assert.True(t, ok) {
+		fm2 := iface.(*firstModule)
+		assert.Equal(t, orig, fm2.arb)
+		assert.Equal(t, fm.arb, fm2.arb)
+	}
+
+	fm3, ok := app.GetOK(Key("300"))
+	assert.False(t, ok)
+	assert.Nil(t, fm3)
+}
+
 func TestApplication_GetModule(t *testing.T) {
 	app, _ := New("GetModuleTest")
 	const orig = "original"
@@ -554,15 +576,14 @@ func TestApplication_GetModule(t *testing.T) {
 
 	var fm2 firstModule
 	fm2.arb = "second"
-	iface, ok := app.Get(firstModuleKey)
-	if assert.True(t, ok) {
+	iface := app.Get(firstModuleKey)
+	if assert.NotNil(t, iface) {
 		fm2 := iface.(*firstModule)
 		assert.Equal(t, orig, fm2.arb)
 		assert.Equal(t, fm.arb, fm2.arb)
 	}
 
-	fm3, ok := app.Get(Key("300"))
-	assert.False(t, ok)
+	fm3 := app.Get(Key("300"))
 	assert.Nil(t, fm3)
 }
 

@@ -11,19 +11,13 @@ compose:
  
 build:
   compile:
-    image: golang:1.7
+    image: casualjim/go-app-test:1.7
     pull: true
     commands:
-      - apt-get update -yqq
       # installing and running haveged so builds don't take forever
-      - apt-get install -yqq haveged
       - haveged --run 0
-      - apt-get install -yqq rsyslog gnupg2
       - rsyslogd
-      - gpg2 --homedir .  --batch --armor --gen-key hack/app.batch
-      - go get -u github.com/axw/gocov/gocov
-      - go get -u gopkg.in/matm/v1/gocov-html
-      - go get -u github.com/cee-dub/go-junit-report
+      - gpg2 --batch --armor --gen-key hack/app.batch
       - go get -t ./...
       - go test -race ./...
       - go test -cover -covermode=atomic -coverprofile=profile.out .

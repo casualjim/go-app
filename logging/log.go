@@ -3,6 +3,7 @@ package logging
 import (
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/Sirupsen/logrus"
 	"github.com/spf13/viper"
@@ -50,7 +51,10 @@ func mergeFields(child, parent logrus.Fields) logrus.Fields {
 	return data
 }
 
+var loggerLock = new(sync.Mutex)
+
 func configureLogger(logger *logrus.Logger, fields logrus.Fields, cfg *viper.Viper) {
+
 	logger.Level = parseLevel(cfg.GetString("level"))
 	logger.Formatter = parseFormatter(cfg.GetString("format"), cfg)
 
@@ -75,6 +79,8 @@ func configureLogger(logger *logrus.Logger, fields logrus.Fields, cfg *viper.Vip
 }
 
 func newNamedLogger(name string, fields logrus.Fields, cfg *viper.Viper, parent *defaultLogger) *defaultLogger {
+	loggerLock.Lock()
+	defer loggerLock.Unlock()
 	logger := logrus.New()
 
 	configureLogger(logger, fields, cfg)
