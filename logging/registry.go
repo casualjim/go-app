@@ -48,8 +48,9 @@ func NewRegistry(cfg *viper.Viper, context logrus.Fields) *Registry {
 
 	var keys []string
 	for _, kn := range c.AllKeys() {
-		if _, ok := logKeys[kn]; !ok {
-			keys = append(keys, kn)
+		ln := strings.SplitN(kn, ".", 2)
+		if _, ok := logKeys[ln[0]]; !ok {
+			keys = append(keys, ln[0])
 		}
 	}
 
