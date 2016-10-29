@@ -6,9 +6,12 @@ import (
 	"log"
 	"net/url"
 	"os"
+	"os/signal"
 	"path/filepath"
+	goruntime "runtime"
 	"strings"
 	"sync"
+	"syscall"
 
 	"github.com/Sirupsen/logrus"
 	"github.com/casualjim/go-app/logging"
@@ -237,6 +240,18 @@ func newWithCallback(nme string, configPath string, reload func(fsnotify.Event))
 
 	tracer := allLoggers.Root().WithField("module", "trace")
 	trace := tracing.New("", tracer, nil)
+
+	go func() {
+		sigs := make(chan os.Signal, 1)
+		signal.Notify(sigs, syscall.SIGQUIT)
+		buf := make([]byte, 1<<20)
+
+		for {
+			<-sigs
+			ln := goruntime.Stack(buf, true)
+			allLoggers.Root().Println(string(buf[:ln]))
+		}
+	}()
 
 	app := &defaultApplication{
 		appInfo:    appInfo,
