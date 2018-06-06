@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Sirupsen/logrus"
 	"github.com/casualjim/go-app/logging"
 	"github.com/fsnotify/fsnotify"
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 	"github.com/xordataexchange/crypt/backend/consul"
