@@ -153,7 +153,10 @@ func (r *Registry) Reload() {
 	// if no more path found or parts are exhausted use last config and stop searching
 	configs := make(map[string]*viper.Viper, len(keys))
 	for _, key := range keys {
-		configs[key] = findLongestMatchingPath(key, r.config)
+		cfg := findLongestMatchingPath(key, r.config)
+		if cfg != nil {
+			configs[key] = findLongestMatchingPath(key, r.config)
+		}
 	}
 
 	// call reconfigure on logger
