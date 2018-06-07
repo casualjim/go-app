@@ -155,7 +155,7 @@ func (r *Registry) Reload() {
 	for _, key := range keys {
 		cfg := findLongestMatchingPath(key, r.config)
 		if cfg != nil {
-			configs[key] = findLongestMatchingPath(key, r.config)
+			configs[key] = cfg
 		}
 	}
 
